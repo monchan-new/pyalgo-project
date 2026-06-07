@@ -19,5 +19,7 @@ export PATH="/root/miniconda3/bin:$PATH"
 /root/miniconda3/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/msys2
 
 # INSTALL PYTHON LIBRARIES
-/root/miniconda3/bin/conda install -y pandas
+/root/miniconda3/bin/conda install -y numpy pandas scipy scikit-learn matplotlib pytables
+/root/miniconda3/bin/conda install -y openpyxl xlsxwriter
 /root/miniconda3/bin/conda install -y ipython
+/root/miniconda3/bin/conda install -y -c conda-forge yfinance
