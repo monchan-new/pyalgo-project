@@ -11,6 +11,12 @@ from BacktestBase import *
 
 class BacktestLongShort(BacktestBase):
 
+
+    # def get_data(self):
+    #     # オンラインではデータを読み込まない
+    #     self.data = pd.DataFrame()  
+
+
     def go_long(self, bar, units=None, amount=None):
         if self.position == -1:
             self.place_buy_order(bar, units=-self.units)
