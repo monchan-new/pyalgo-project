@@ -4,13 +4,14 @@ import pandas as pd
 api = tpqoa.tpqoa('src/pyalgo.cfg')
 
 # ヒストリーデータの取得
-# df = api.get_history(
-#     instrument='USD_JPY',
-#     start='2024-01-01',
-#     end='2024-01-05',
-#     granularity='H1',
-#     price='M'
-# )
+df = api.get_history(
+    instrument='USD_JPY',
+    start='2024-01-01',
+    end='2024-01-05',
+    granularity='H1',
+    price='M'
+)
+print(df)
 
 
 # 成行買い（1万通貨）
@@ -20,8 +21,8 @@ api = tpqoa.tpqoa('src/pyalgo.cfg')
 # )
 
 # 建玉一覧を確認
-positions = api.get_positions()
-print(positions)
+# positions = api.get_positions()
+# print(positions)
 
 
 # 該当の Long（10,000 通貨）だけ決済
