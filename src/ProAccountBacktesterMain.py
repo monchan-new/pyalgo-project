@@ -14,36 +14,51 @@ def fetch_data(api, instrument, granularity, start, end):
     )
     df.rename(columns={'o':'open','h':'high','l':'low','c':'close'}, inplace=True)
 
-    # 日足データを取得し短期/長期SMAによるSignalを作成し上記データに追加する。
-    df_daily = api.get_history(instrument, start, end, granularity='D', price='M')
-    # df_daily = api.get_history(instrument, start, end, granularity='H1', price='M')
-    df_daily.rename(columns={'o':'open','h':'high','l':'low','c':'close'}, inplace=True)
 
+    # SMA用のGranularity(例：日足)データを取得し短期/長期SMAによるSignalを作成し、上記データに追加する。
+    granularity_sma = 'H4'
+    df_sma = api.get_history(instrument, start, end, granularity_sma, price='M')
+    df_sma.rename(columns={'o':'open','h':'high','l':'low','c':'close'}, inplace=True)
+    df_sma['sma_short'] = df_sma['close'].rolling(9).mean()
+    df_sma['sma_long']  = df_sma['close'].rolling(26).mean()
     
+    df_sma['signal'] = 0  # 初期値を全部 0（ノーポジ）にセットしておくことで、次の処理でSMAがないレコードに対しては処理をスキップできる。
+    mask_valid = df_sma['sma_short'].notna() & df_sma['sma_long'].notna()
+    df_sma.loc[mask_valid & (df_sma['sma_short'] > df_sma['sma_long']), 'signal'] = 1
+    df_sma.loc[mask_valid & (df_sma['sma_short'] < df_sma['sma_long']), 'signal'] = -1
 
-    df_daily['sma_short'] = df_daily['close'].rolling(9).mean()
-    df_daily['sma_long']  = df_daily['close'].rolling(26).mean()
-    
-    df_daily['signal'] = 0  # 初期値は全部 0（ノーポジ）
-    
-    mask_valid = df_daily['sma_short'].notna() & df_daily['sma_long'].notna()
-    df_daily.loc[mask_valid & (df_daily['sma_short'] > df_daily['sma_long']), 'signal'] = 1
-    df_daily.loc[mask_valid & (df_daily['sma_short'] < df_daily['sma_long']), 'signal'] = -1
+    # --- SMA側のGranularityに応じた時刻メッシュを作成する ---
+    if granularity_sma == 'D':
+        df['sma_time'] = df.index.floor('D')
+        df_sma['sma_time'] = df_sma.index.floor('D') # ここだけ日付のみフォーマットに合わせる必要がある。
+    elif granularity_sma == 'H1':
+        df['sma_time'] = df.index.floor('h')
+        df_sma['sma_time'] = df_sma.index
+    elif granularity_sma == 'H4':
+        # SMA側で取得したOANDAのH4の区切りが22:00スタートなので、Data側の時間をいったん２時間マイナスした状態で24:00スタートの4h区切りに変換して、最後にその区切りに2時間をプラスする。
+        shifted = df.index - pd.Timedelta(hours=2)
+        floored = shifted.floor('4h')
+        df['sma_time'] = floored + pd.Timedelta(hours=2)
+        # df['sma_time'] = df.index.floor('4h')
+        df_sma['sma_time'] = df_sma.index
+    elif granularity_sma == 'M15':
+        df['sma_time'] = df.index.floor('15min')
+        df_sma['sma_time'] = df_sma.index
+    else:
+        raise ValueError("Unsupported granularity")
 
-    # ★ 最初の signal を 0 にする
-    df_daily['signal'] = df_daily['signal'].fillna(0)
 
-    # print(df_daily)
-    # df_daily.to_csv("data/df_daily.csv")
-    
-    df = df.merge(df_daily[['signal']], left_index=True, right_index=True, how='left')
+    # --- SMAのGranularityでマージする ---
+    df_sma = df_sma.set_index('sma_time')
+    df = df.merge(df_sma[['signal']], left_on='sma_time', right_index=True, how='left')
 
-    # ① 日足があるバー（22:00）にだけ signal が入る
-    # ② それ以外の時間は NaN なので、前の値で埋める
+    # --- signal を ffill してその日の全バーに適用 ---
     df['signal'] = df['signal'].ffill()
 
+    # print(df_sma)
+    df_sma.to_csv("data/df_sma.csv")
     # print(df)
-    # df.to_csv("data/df.csv")
+    df.to_csv("data/df.csv")
 
     return df
 
@@ -52,21 +67,20 @@ def fetch_data(api, instrument, granularity, start, end):
 def run_all_backtests(
     # instruments=['USD_JPY','EUR_USD','GBP_JPY'],
     instruments=['USD_JPY'],
-    # granularities=['M5','H1','H4'],
-    granularities=['M5','H1'],
+    granularities=['M1'],
     # sma_settings=[(5,20),(9,26)],
     sma_settings=[(9,26)],
-    tp_list=[40,50,60,70],
-    start='2026-01-01',
-    end='2026-07-01'
+    tp_list=[30],
+    start='2019-11-20',
+    end='2026-06-01'
 ):
 
 # def run_all_backtests(
 #     instruments=['USD_JPY'],
-#     granularities=['H1'],
+#     granularities=['M5'],
 #     sma_settings=[(9,26)],
-#     tp_list=[0],
-#     start='2026-01-01',
+#     tp_list=[60],
+#     start='2019-12-01',
 #     end='2026-07-01'
 # ):
     
@@ -101,8 +115,6 @@ def run_all_backtests(
                     if trades.empty or monthly is None or monthly.empty:
                       print(f"トレードなし: {inst} {gran} SMA({short_sma},{long_sma}) TP={tp}")
                       continue
-
-                  
 
                     final_pnl = monthly['cum_pnl'].iloc[-1]
 

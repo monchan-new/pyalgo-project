@@ -32,41 +32,49 @@ def backtest_pro(df, short_sma=9, long_sma=26, tp_pips=20, notional=20000, pip=0
             # if prev['signal'] == 0:
             #     pass  # 何もしない
 
-            spread = 0.08      # Bid–Ask 全体の幅（8 pips）
-            half_spread = spread / 2  # 4 pips = 0.04円
+            spread = 0.008      # Bid–Ask 全体の幅（0.8 pips）
 
             if prev['signal'] == 1:  # Long
                 position = 1
-                entry_price = row['open'] + half_spread      # M → Ask
+                entry_price = row['open'] + spread      # M → Spread分を高く
                 tp_price = entry_price + tp_pips * pip 
                 sl_price = entry_price - tp_pips * pip
 
             elif prev['signal'] == -1:  # Short
                 position = -1
-                entry_price = row['open'] - half_spread      # M → Bid
+                entry_price = row['open'] - spread      # M → Spread分を安く
                 tp_price = entry_price - tp_pips * pip
                 sl_price = entry_price + tp_pips * pip
 
         # ② ポジションあり → 今バーの高値/安値で OCO 判定
         else:
             if position == 1:  # Long
-                if row['low'] <= sl_price:
+                
+                # 両方ヒット → 利益0でクローズ
+                if (row['low'] <= sl_price) and (row['high'] >= tp_price):
+                    pnl = 0
+                    trades.append((time, 'LONG', entry_price, entry_price, pnl))
+                    position = 0
+                # SL ヒット
+                elif row['low'] <= sl_price:
                     pnl = -tp_pips * notional * pip
                     trades.append((time, 'LONG', entry_price, sl_price, pnl))
                     position = 0
-                
+                # TP ヒット
                 elif row['high'] >= tp_price:
                     pnl = tp_pips * notional * pip
                     trades.append((time, 'LONG', entry_price, tp_price, pnl))
                     position = 0
 
-
             elif position == -1:  # Short
-                if row['high'] >= sl_price:
+                if (row['high'] >= sl_price) and (row['low'] <= tp_price):
+                    pnl = 0
+                    trades.append((time, 'SHORT', entry_price, entry_price, pnl))
+                    position = 0           
+                elif row['high'] >= sl_price:
                     pnl = -tp_pips * notional * pip
                     trades.append((time, 'SHORT', entry_price, sl_price, pnl))
                     position = 0
-                
                 elif row['low'] <= tp_price:
                     pnl = tp_pips * notional * pip
                     trades.append((time, 'SHORT', entry_price, tp_price, pnl))
@@ -87,6 +95,7 @@ def backtest_pro(df, short_sma=9, long_sma=26, tp_pips=20, notional=20000, pip=0
     
     # print(trades_df, monthly)
     print(monthly)
-    # trades_df.to_csv("data/trades_df.csv")
+    monthly.to_csv("data/montly.csv")
+    trades_df.to_csv("data/trades_df.csv")
     
     return trades_df, monthly
