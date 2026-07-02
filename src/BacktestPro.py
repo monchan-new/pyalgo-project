@@ -3,14 +3,6 @@ import pandas as pd
 def backtest_pro(df, short_sma=9, long_sma=26, tp_pips=20, notional=20000, pip=0.01):
     data = df.copy()
 
-    # # SMA
-    # data['sma_short'] = data['close'].rolling(short_sma).mean()
-    # data['sma_long']  = data['close'].rolling(long_sma).mean()
-
-    # # シグナル（前バーで判定）
-    # data['signal'] = 0
-    # data.loc[data['sma_short'] > data['sma_long'], 'signal'] = 1
-    # data.loc[data['sma_short'] < data['sma_long'], 'signal'] = -1
 
     position = 0
     entry_price = None
