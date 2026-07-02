@@ -95,7 +95,7 @@ def backtest_pro(df, short_sma=9, long_sma=26, tp_pips=20, notional=20000, pip=0
     
     # print(trades_df, monthly)
     print(monthly)
-    monthly.to_csv("data/montly.csv")
+    monthly.to_csv("data/monthly.csv")
     trades_df.to_csv("data/trades_df.csv")
     
     return trades_df, monthly

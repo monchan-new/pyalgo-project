@@ -16,7 +16,7 @@ def fetch_data(api, instrument, granularity, start, end):
 
 
     # SMA用のGranularity(例：日足)データを取得し短期/長期SMAによるSignalを作成し、上記データに追加する。
-    granularity_sma = 'H4'
+    granularity_sma = 'H1'
     df_sma = api.get_history(instrument, start, end, granularity_sma, price='M')
     df_sma.rename(columns={'o':'open','h':'high','l':'low','c':'close'}, inplace=True)
     df_sma['sma_short'] = df_sma['close'].rolling(9).mean()
@@ -70,7 +70,7 @@ def run_all_backtests(
     granularities=['M1'],
     # sma_settings=[(5,20),(9,26)],
     sma_settings=[(9,26)],
-    tp_list=[30],
+    tp_list=[40],
     start='2019-11-20',
     end='2026-06-01'
 ):
