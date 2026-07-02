@@ -132,4 +132,3 @@ def run_all_backtests(
 
 df_results = run_all_backtests()
 print(df_results)
-
