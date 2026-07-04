@@ -32,11 +32,31 @@ def backtest_pro(df, short_sma=9, long_sma=26, tp_pips=20, notional=20000, pip=0
                 tp_price = entry_price + tp_pips * pip 
                 sl_price = entry_price - tp_pips * pip
 
-            elif prev['signal'] == -1:  # Short
-                position = -1
-                entry_price = row['open'] - spread      # M → Spread分を安く
-                tp_price = entry_price - tp_pips * pip
-                sl_price = entry_price + tp_pips * pip
+            # elif prev['signal'] == -1:  # Short  
+            #     position = -1
+            #     entry_price = row['open'] - spread      # M → Spread分を安く
+            #     tp_price = entry_price - tp_pips * pip
+            #     sl_price = entry_price + tp_pips * pip
+
+            # if prev['signal'] == 1:  # Long
+            #     if prev['close'] > prev['sma_long']:
+            #         position = 1
+            #         entry_price = row['open'] + spread      # M → Spread分を高く
+            #         tp_price = entry_price + tp_pips * pip 
+            #         sl_price = entry_price - tp_pips * pip
+            #     else:
+            #         # 急落フィルター発動：新規買いを建てない
+            #         pass
+
+            # elif prev['signal'] == -1:  # Short  
+            #     if prev['close'] < prev['sma_long']:
+            #         position = -1
+            #         entry_price = row['open'] - spread      # M → Spread分を安く
+            #         tp_price = entry_price - tp_pips * pip
+            #         sl_price = entry_price + tp_pips * pip
+            #     else:
+            #       # 急上昇フィルター発動：新規売りを建てない
+            #       pass
 
         # ② ポジションあり → 今バーの高値/安値で OCO 判定
         else:
