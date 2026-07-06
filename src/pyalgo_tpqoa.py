@@ -1,7 +1,7 @@
 import tpqoa
 import pandas as pd
 
-api = tpqoa.tpqoa('src/pyalgo.cfg')
+api = tpqoa.tpqoa('src/pyalgo_netting.cfg')
 
 # ヒストリーデータの取得
 df = api.get_history(

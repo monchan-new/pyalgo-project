@@ -165,7 +165,8 @@ def run_all_backtests(
     # sma_settings=[(5,20),(9,26)],
     sma_settings=[(9,26)],
     tp_list=[10,20,30],
-    start='2019-11-20',
+    # start='2019-11-20',
+    start='2026-04-01',
     end='2026-06-01',
     granularity_sma = 'H1'
 ):
@@ -179,7 +180,7 @@ def run_all_backtests(
 #     end='2026-07-01'
 # ):
     
-    api = tpqoa.tpqoa('src/pyalgo.cfg')
+    api = tpqoa.tpqoa('src/pyalgo_netting.cfg')
 
     results = []
 
