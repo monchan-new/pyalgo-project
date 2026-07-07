@@ -2,26 +2,58 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import brute
 
+import tpqoa
+
 class SMAVectorBacktester:
 
-    def __init__(self, symbol, SMA1, SMA2, start, end):
+    def __init__(self, symbol, SMA1, SMA2, start, end,      granularity='D'):
         self.symbol = symbol
         self.SMA1 = SMA1
         self.SMA2 = SMA2
         self.start = start
         self.end = end
+        self.granularity = granularity
         self.results = None
+
+        # API は1回だけ作る（重要）
+        self.api = tpqoa.tpqoa('/workspace/src/pyalgo_netting.cfg')
+        
         self.get_data()
 
     def get_data(self):
-        raw = pd.read_csv(
-            'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
-            index_col=0, parse_dates=True
-        ).dropna()
+        # --- ① OANDA からヒストリカルデータ取得 ---
+        df = self.api.get_history(
+            instrument=self.symbol,     # 例: 'EUR_USD'
+            start=self.start,           # '2010-01-01'
+            end=self.end,               # '2020-01-01'
+            granularity=self.granularity, # 'D', 'H1', 'M15' など
+            price='M'                   # Mid価格（OHLC）
+        )
 
-        raw = pd.DataFrame(raw[self.symbol])
+        # --- ② 未確定足を除外（バックテストでは必須） ---
+        df = df[df['complete'] == True]
+
+        # --- ③ Index を datetime に変換 ---
+        df.index = pd.to_datetime(df.index)
+
+        # --- ④ 列名を統一（Hilpisch のコードと互換にする） ---
+        df.rename(columns={'o':'open','h':'high','l':'low','c':'close'}, inplace=True)
+
+        # --- ⑤ Hilpisch の raw と同じ構造に変換 ---
+        raw = pd.DataFrame(df['close'])
+        raw.rename(columns={'close': 'price'}, inplace=True)
+
+        # --- ⑥ 期間でフィルタリング ---
         raw = raw.loc[self.start:self.end]
-        raw.rename(columns={self.symbol: 'price'}, inplace=True)
+
+        # raw = pd.read_csv(
+        #     'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
+        #     index_col=0, parse_dates=True
+        # ).dropna()
+
+        # raw = pd.DataFrame(raw[self.symbol])
+        # raw = raw.loc[self.start:self.end]
+        # raw.rename(columns={self.symbol: 'price'}, inplace=True)
 
         raw['return'] = np.log(raw['price'] / raw['price'].shift(1))
         raw['SMA1'] = raw['price'].rolling(self.SMA1).mean()
