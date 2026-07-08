@@ -6,13 +6,15 @@ import tpqoa
 
 class SMAVectorBacktester:
 
-    def __init__(self, symbol, SMA1, SMA2, start, end,      granularity='D'):
+    def __init__(self, symbol, SMA1, SMA2, start, end, granularity='D'):
         self.symbol = symbol
         self.SMA1 = SMA1
         self.SMA2 = SMA2
         self.start = start
         self.end = end
+
         self.granularity = granularity
+        
         self.results = None
 
         # API は1回だけ作る（重要）
@@ -83,6 +85,9 @@ class SMAVectorBacktester:
 
         aperf = data['cstrategy'].iloc[-1]
         operf = aperf - data['creturns'].iloc[-1]
+        
+        print("SMA1 & SMA2:", self.SMA1, self.SMA2)
+        print("Absolute performance:", aperf)
 
         return round(aperf, 2), round(operf, 2)
 
