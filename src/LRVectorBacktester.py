@@ -10,6 +10,9 @@
 import numpy as np
 import pandas as pd
 
+import tpqoa
+from scipy.optimize import brute
+
 class LRVectorBacktester:
     ''' Class for the vectorized backtesting of
     linear regression-based trading strategies.
@@ -27,6 +30,10 @@ class LRVectorBacktester:
     tc: float
         proportional transaction costs (e.g., 0.5% = 0.005) per trade
 
+    (added)
+    granularity: str
+        granularity of target data
+
     Methods
     =======
     get_data:
@@ -43,26 +50,57 @@ class LRVectorBacktester:
         plots the performance of the strategy compared to the symbol
     '''
     
-    def __init__(self, symbol, start, end, amount, tc):
+    def __init__(self, symbol, start, end, amount, tc=0.000025, granularity='D'):
         self.symbol = symbol
         self.start = start
         self.end = end
         self.amount = amount
-        self.tc = tc
+        self.tc = tc # for USD_JPN: 0.8Pips(0.008)/2 / 160 = 0.000025
+        self.granularity = granularity # exaple: 'D"
         self.results = None
+
+        # API は1回だけ作る（重要）
+        self.api = tpqoa.tpqoa('/workspace/src/pyalgo_netting.cfg')
+
         self.get_data()
 
     def get_data(self):
         ''' Retrieves and prepares the data.
         '''
-        raw = pd.read_csv(
-            'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
-            index_col=0, parse_dates=True
-        ).dropna()
+        # --- ① OANDA からヒストリカルデータ取得 ---
+        df = self.api.get_history(
+            instrument=self.symbol,     # 例: 'EUR_USD'
+            start=self.start,           # '2010-01-01'
+            end=self.end,               # '2020-01-01'
+            granularity=self.granularity, # 'D', 'H1', 'M15' など
+            price='M'                   # Mid価格（OHLC）
+        )
 
-        raw = pd.DataFrame(raw[self.symbol])
-        raw = raw.loc[self.start:self.end]
-        raw.rename(columns={self.symbol: 'price'}, inplace=True)
+        # --- ② 未確定足を除外（バックテストでは必須） ---
+        df = df[df['complete'] == True]
+
+        # --- ③ Index を datetime に変換 ---
+        df.index = pd.to_datetime(df.index)
+
+        # --- ④ 列名を統一（Hilpisch のコードと互換にする） ---
+        df.rename(columns={'o':'open','h':'high','l':'low','c':'close'}, inplace=True)
+
+        # --- ⑤ Hilpisch の raw と同じ構造に変換 ---
+        raw = pd.DataFrame(df['close'])
+        raw.rename(columns={'close': 'price'}, inplace=True)
+
+        # --- ⑥ 期間でフィルタリング --- (end日を含むように変更)---
+        end_dt = pd.to_datetime(self.end) + pd.Timedelta(days=1)
+        raw = raw.loc[self.start:end_dt]
+
+        # raw = pd.read_csv(
+        #     'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
+        #     index_col=0, parse_dates=True
+        # ).dropna()
+        # raw = pd.DataFrame(raw[self.symbol])
+        # raw = raw.loc[self.start:self.end]
+        # raw.rename(columns={self.symbol: 'price'}, inplace=True)
+
         raw['returns'] = np.log(raw / raw.shift(1))
         self.data = raw.dropna()
 
@@ -100,6 +138,11 @@ class LRVectorBacktester:
     def run_strategy(self, start_in, end_in, start_out, end_out, lags=3):
         ''' Backtests the trading strategy.
         '''
+        self.start_in = start_in
+        self.end_in = end_in
+        self.start_out = start_out
+        self.end_out = end_out
+
         self.lags = lags
         self.fit_model(start_in, end_in)
         self.results = self.select_data(start_out, end_out).iloc[lags:]
@@ -132,6 +175,28 @@ class LRVectorBacktester:
         title = f'{self.symbol} | TC =  {self.tc:.4f}'
         self.results[['creturns', 'cstrategy']].plot(title=title,
                                                      figsize=(10,6)) 
+        
+
+    def optimize_parameters(self, lags_range):
+        best_lags = None
+        best_value = -np.inf
+
+        start, end, step = lags_range
+
+        for m in range(start, end + 1, step):
+            value = self.run_strategy(
+                self.start_in,
+                self.end_in,
+                self.start_out,
+                self.end_out,
+                lags=m
+            )[0]
+            if value > best_value:
+                best_value = value
+                best_lags = m
+
+        return best_lags, best_value
+
 
 if __name__ == '__main__':
     lrbt = LRVectorBacktester('.SPX', '2010-1-1', '2018-06-29', 10000, 0.0)

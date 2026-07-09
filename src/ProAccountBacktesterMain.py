@@ -19,7 +19,19 @@ def resample_ohlc_from_m1(df_m1: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         指定時間軸の OHLC データ
     """
 
-    if timeframe == '4h':
+    if timeframe == 'D':
+        # OANDA の 日足 は 22:00 始まりなので 2時間ずらす
+        # ※実際には夏時間は21:00始まりで３時間ずらす必要があるが、Backtestではそこまで厳密には考慮しないでおく。
+        df_shifted = df_m1.shift(freq='2h')
+        df_tf = df_shifted.resample('D').agg({
+            'open': 'first',
+            'high': 'max',
+            'low':  'min',
+            'close': 'last'
+        })
+        # 元の時間に戻す
+        df_tf.index = df_tf.index - pd.Timedelta(hours=2)
+    elif timeframe == '4h':
         # OANDA の H4 は 22:00 始まりなので 2時間ずらす
         df_shifted = df_m1.shift(freq='2h')
         df_tf = df_shifted.resample('4h').agg({
@@ -113,8 +125,11 @@ def fetch_data(api, instrument, granularity, start, end,
 
     # --- SMA側のGranularityに応じた時刻メッシュを作成する ---
     if granularity_sma == 'D':
-        df['sma_time'] = df.index.floor('D')
-        df_sma['sma_time'] = df_sma.index.floor('D') # ここだけ日付のみフォーマットに合わせる必要がある。
+        # Tradeデータ側を2時間ずらして日足区切りを合わせる
+        shifted = df.index - pd.Timedelta(hours=2)
+        df['sma_time'] = shifted.floor('D') + pd.Timedelta(hours=2)
+        # SMA側はすでに22:00区切りなのでそのまま
+        df_sma['sma_time'] = df_sma.index
     elif granularity_sma == 'H1':
         df['sma_time'] = df.index.floor('h')
         df_sma['sma_time'] = df_sma.index
@@ -123,7 +138,7 @@ def fetch_data(api, instrument, granularity, start, end,
         shifted = df.index - pd.Timedelta(hours=2)
         floored = shifted.floor('4h')
         df['sma_time'] = floored + pd.Timedelta(hours=2)
-        # df['sma_time'] = df.index.floor('4h')
+
         df_sma['sma_time'] = df_sma.index
     elif granularity_sma == 'M30':
         df['sma_time'] = df.index.floor('30min')

@@ -45,8 +45,10 @@ class SMAVectorBacktester:
         raw = pd.DataFrame(df['close'])
         raw.rename(columns={'close': 'price'}, inplace=True)
 
-        # --- ⑥ 期間でフィルタリング ---
-        raw = raw.loc[self.start:self.end]
+        # --- ⑥ 期間でフィルタリング (end日を含むように変更)---
+        end_dt = pd.to_datetime(self.end) + pd.Timedelta(days=1)
+        raw = raw.loc[self.start:end_dt]
+        # raw = raw.loc[self.start:self.end+1]
 
         # raw = pd.read_csv(
         #     'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
@@ -75,6 +77,7 @@ class SMAVectorBacktester:
         data = self.data.copy().dropna()
 
         data['position'] = np.where(data['SMA1'] > data['SMA2'], 1, -1)
+        # data['position'] = np.where(data['SMA1'] > data['SMA2'], 1, 0)
         data['strategy'] = data['position'].shift(1) * data['return']
 
         data.dropna(inplace=True)
@@ -82,6 +85,7 @@ class SMAVectorBacktester:
         data['cstrategy'] = data['strategy'].cumsum().apply(np.exp)
 
         self.results = data
+        # print("data::", data)
 
         aperf = data['cstrategy'].iloc[-1]
         operf = aperf - data['creturns'].iloc[-1]

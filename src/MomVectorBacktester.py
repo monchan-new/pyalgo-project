@@ -30,6 +30,10 @@ class MomVectorBacktester:
     tc: float
         proportional transaction costs (e.g., 0.5% = 0.005) per trade
 
+    (added)
+    granularity: str
+        granularity of target data
+
     Methods
     =======
     get_data:
@@ -79,9 +83,9 @@ class MomVectorBacktester:
         raw = pd.DataFrame(df['close'])
         raw.rename(columns={'close': 'price'}, inplace=True)
 
-        # --- ⑥ 期間でフィルタリング ---
-        raw = raw.loc[self.start:self.end]
-
+        # --- ⑥ 期間でフィルタリング --- (end日を含むように変更)---
+        end_dt = pd.to_datetime(self.end) + pd.Timedelta(days=1)
+        raw = raw.loc[self.start:end_dt]
 
         # raw = pd.read_csv(
         #     'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
@@ -91,6 +95,7 @@ class MomVectorBacktester:
         # raw = pd.DataFrame(raw[self.symbol])
         # raw = raw.loc[self.start:self.end]
         # raw.rename(columns={self.symbol: 'price'}, inplace=True)
+
         raw['return'] = np.log(raw / raw.shift(1))
         self.data = raw
 
