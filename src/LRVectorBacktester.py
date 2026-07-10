@@ -72,10 +72,10 @@ class LRVectorBacktester:
             instrument=self.symbol,     # 例: 'EUR_USD'
             # 日付及び時刻はUTCのベースの日付／時刻を指定する必要がある。
             # 特に日足はNYのclose(UTC21:00/21:00)のタイミングでは区切られてはいるが、開始時刻の日付が付けられているために、通常感覚の日付の１日前の日付となっていることに注意。
-            # また、時間足に日付を指定した場合にはUTC00:00の時刻指定とみなされるが、end日に対しては(日足と同様にその日全体を含むようにするために)UTC23:59まで延長するようにしている。
-            start=self.start,           # '2010-01-01'
-            end=self.end,               # '2020-01-01'
-            granularity=self.granularity, # 'D', 'H1', 'M15' など
+            # 時間足に日付を指定した場合にはUTC00:00の時刻指定とみなされるが、end日に対しては(日足と同様にその日全体を含むようにするために)UTC23:59まで延長するようにしている。
+            start=self.start, # '2009-12-31', '2009-12-31T21:00:00Z'
+            end=self.end,     # '2010-12-30', "2010-12-31T20:59:59Z"
+            granularity=self.granularity, # 'D', 'H1', 'M15', 'S5' など
             price='M'                   # Mid価格（OHLC）
         )
 

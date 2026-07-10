@@ -45,10 +45,11 @@ class SMAVectorBacktester:
         raw = pd.DataFrame(df['close'])
         raw.rename(columns={'close': 'price'}, inplace=True)
 
-        # --- ⑥ 期間でフィルタリング (end日を含むように変更)---
-        end_dt = pd.to_datetime(self.end) + pd.Timedelta(days=1)
+
+        # --- ⑥ 期間でフィルタリング (end日を含むように変更をやめた)---
+        # end_dt = pd.to_datetime(self.end) + pd.Timedelta(days=1)
+        end_dt = pd.to_datetime(self.end)
         raw = raw.loc[self.start:end_dt]
-        # raw = raw.loc[self.start:self.end+1]
 
         # raw = pd.read_csv(
         #     'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
@@ -64,6 +65,7 @@ class SMAVectorBacktester:
         raw['SMA2'] = raw['price'].rolling(self.SMA2).mean()
 
         self.data = raw
+        # print(raw)
 
     def set_parameters(self, SMA1=None, SMA2=None):
         if SMA1 is not None:
@@ -74,13 +76,18 @@ class SMAVectorBacktester:
             self.data['SMA2'] = self.data['price'].rolling(self.SMA2).mean()
 
     def run_strategy(self):
-        data = self.data.copy().dropna()
+        # 最初の行はreturnはなしでPrice/SMAのみ存在する行となるが、Signalとして使用可能と判断し、dropna()しないように変更。
+        data = self.data.copy()
+        # data = self.data.copy().dropna()
+        # print('before position',data)
 
         data['position'] = np.where(data['SMA1'] > data['SMA2'], 1, -1)
         # data['position'] = np.where(data['SMA1'] > data['SMA2'], 1, 0)
         data['strategy'] = data['position'].shift(1) * data['return']
 
+        # print('before dropna',data)
         data.dropna(inplace=True)
+        # print('after dropna',data)
         data['creturns'] = data['return'].cumsum().apply(np.exp)
         data['cstrategy'] = data['strategy'].cumsum().apply(np.exp)
 

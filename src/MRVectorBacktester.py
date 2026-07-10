@@ -40,10 +40,13 @@ class MRVectorBacktester(MomVectorBacktester):
     def run_strategy(self, SMA, threshold):
         ''' Backtests the trading strategy.
         '''
-        data = self.data.copy().dropna()
+        # 最初の行はreturnはなしでPrice/SMAのみ存在する行となるが、Signalとして使用可能と判断し、dropna()しないように変更。
+        data = self.data.copy()
+        # data = self.data.copy().dropna()
         data['sma'] = data['price'].rolling(SMA).mean()
         data['distance'] = data['price'] - data['sma']
-        data.dropna(inplace=True)
+        # data.dropna(inplace=True)
+
         # sell signals (change each recored with -1 or Nan)
         data['position'] = np.where(data['distance'] > threshold, -1, np.nan)
         # buy signals (again, change each record with 1 or copy same data: -1 or Nan)
@@ -52,7 +55,7 @@ class MRVectorBacktester(MomVectorBacktester):
         data['position'] = np.where(data['distance'] *
                                     data['distance'].shift(1) <0,
                                     0, data['position'])
-        data['position'] = data['position'].ffill().fillna(0) # Nanのレコードは前方のレコードの値を埋め込む。前方がない先頭付近のNanは０に置き換える。
+        data['position'] = data['position'].ffill().fillna(0) # Nanのレコードは前方のレコードの値を埋め込む。先頭付近の前方がないNanは０に置き換える。
         
         data['strategy'] = data['position'].shift(1) * data['return']
         # determine when a trade takes place
