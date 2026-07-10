@@ -56,10 +56,10 @@ class LRVectorBacktester:
         self.end = end
         self.amount = amount
         self.tc = tc # for USD_JPN: 0.8Pips(0.008)/2 / 160 = 0.000025
-        self.granularity = granularity # exaple: 'D"
+        self.granularity = granularity # example: 'D"
         self.results = None
 
-        # API は1回だけ作る（重要）
+        # API は1回だけ作る
         self.api = tpqoa.tpqoa('/workspace/src/pyalgo_netting.cfg')
 
         self.get_data()
@@ -70,6 +70,9 @@ class LRVectorBacktester:
         # --- ① OANDA からヒストリカルデータ取得 ---
         df = self.api.get_history(
             instrument=self.symbol,     # 例: 'EUR_USD'
+            # 日付及び時刻はUTCのベースの日付／時刻を指定する必要がある。
+            # 特に日足はNYのclose(UTC21:00/21:00)のタイミングでは区切られてはいるが、開始時刻の日付が付けられているために、通常感覚の日付の１日前の日付となっていることに注意。
+            # また、時間足に日付を指定した場合にはUTC00:00の時刻指定とみなされるが、end日に対しては(日足と同様にその日全体を含むようにするために)UTC23:59まで延長するようにしている。
             start=self.start,           # '2010-01-01'
             end=self.end,               # '2020-01-01'
             granularity=self.granularity, # 'D', 'H1', 'M15' など
@@ -89,9 +92,12 @@ class LRVectorBacktester:
         raw = pd.DataFrame(df['close'])
         raw.rename(columns={'close': 'price'}, inplace=True)
 
-        # --- ⑥ 期間でフィルタリング --- (end日を含むように変更)---
-        end_dt = pd.to_datetime(self.end) + pd.Timedelta(days=1)
+        # --- ⑥ 期間でフィルタリング（時間足対応版） ---
+        end_dt = pd.to_datetime(self.end) + pd.Timedelta(hours=23, minutes=59, seconds=59)
         raw = raw.loc[self.start:end_dt]
+        # # --- ⑥ 期間でフィルタリング --- (end日を含むように変更←不要だったみたい)---
+        # end_dt = pd.to_datetime(self.end) + pd.Timedelta(days=1)
+        # raw = raw.loc[self.start:end_dt]
 
         # raw = pd.read_csv(
         #     'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
