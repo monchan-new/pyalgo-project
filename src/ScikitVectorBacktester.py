@@ -71,12 +71,11 @@ class ScikitVectorBacktester:
         else:
             raise ValueError('Model not known or not yet implemented.')
         
-
         # API は1回だけ作る
         self.api = tpqoa.tpqoa('/workspace/src/pyalgo_netting.cfg')
 
-
         self.get_data()
+
 
     def get_data(self):
         ''' Retrieves and prepares the data.
@@ -108,7 +107,7 @@ class ScikitVectorBacktester:
         raw.rename(columns={'close': 'price'}, inplace=True)
 
         # --- ⑥ 期間でフィルタリング ---
-            # 時間足対応は混乱するためにやめた。
+            # 時間足対応は混乱するためやめた。
             # end_dt = pd.to_datetime(self.end) + pd.Timedelta(hours=23, minutes=59, seconds=59)
         raw = raw.loc[self.start:self.end]
 
@@ -116,7 +115,6 @@ class ScikitVectorBacktester:
         #     'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
         #     index_col=0, parse_dates=True
         # ).dropna()
-
         # raw = pd.DataFrame(raw[self.symbol])
         # raw = raw.loc[self.start:self.end]
         # raw.rename(columns={self.symbol: 'price'}, inplace=True)
@@ -186,6 +184,54 @@ class ScikitVectorBacktester:
         title = f'{self.symbol} | TC =  {self.tc:.4f}'
         self.results[['creturns', 'cstrategy']].plot(title=title,
                                                      figsize=(10,6)) 
+
+    
+    def update_and_run(self, params):
+        # params = [T_in, lags]
+        T_in = int(params[0])
+        lags = int(params[1])
+
+        # --- ① target_start はユーザーがズバリ指定 ---
+        target_start = pd.to_datetime(self.target_start)
+
+        # --- ② Out の長さは引数で指定 ---
+        target_end = target_start + pd.Timedelta(days=self.out_len_days - 1)
+
+        # --- ③ 学習期間（In）は直近の T_in 日間 ---
+        start_in = target_start - pd.Timedelta(days=T_in)
+        end_in   = target_start - pd.Timedelta(days=1)
+
+        # Outはやはりstart_outからout_len_days(例：１週間)だけとする。
+        start_out = target_start
+        end_out   = target_end
+
+        # --- ⑤ 実行 ---
+        return -self.run_strategy(start_in, end_in, start_out, end_out, lags)[0]
+
+    def optimize_parameters(self, T_in_range, lags_range,
+                        target_start, out_len_days=7):
+        
+        ''' 使い方：
+        T_in_range  = (20, 260, 20)   # 学習期間:20〜260日
+        lags_range  = (1, 30, 1)      # lags:1〜30
+        target_start = "2025-01-01"   # この週を検証したい
+        out_len_days = 7              # Out の長さを指定(7日)
+        '''
+        # 検証したい週の開始日と Out の長さをセット
+        self.target_start = target_start
+        self.out_len_days = out_len_days
+
+        opt = brute(self.update_and_run,
+                    (T_in_range, lags_range),
+                    finish=None)
+
+        best_T_in  = int(opt[0])
+        best_lags  = int(opt[1])
+        best_perf  = -self.update_and_run(opt)
+
+        return (best_T_in, best_lags), best_perf
+
+
 
 if __name__ == '__main__':
     scibt = ScikitVectorBacktester('.SPX', '2010-1-1', '2019-12-31',
