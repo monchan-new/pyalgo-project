@@ -45,16 +45,24 @@ class MRVectorBacktester(MomVectorBacktester):
         # data = self.data.copy().dropna()
         data['sma'] = data['price'].rolling(SMA).mean()
         data['distance'] = data['price'] - data['sma']
+        # 標準偏差の倍率で指定する方式に変更するため、平均からの距離をZscoreに変更（平均０/標準偏差１のスケールに正規化する）
+        data['zscore'] = (data['price'] - data['sma']) / data['price'].rolling(SMA).std()
         # data.dropna(inplace=True)
-
+        
+        # 標準偏差の倍率で指定する形式に変更（例：threshold=１を指定すると、価格が平均から標準偏差分を超えたら発動する形になる。）
         # sell signals (change each recored with -1 or Nan)
-        data['position'] = np.where(data['distance'] > threshold, -1, np.nan)
+        data['position'] = np.where(data['zscore'] > threshold, -1, np.nan)
         # buy signals (again, change each record with 1 or copy same data: -1 or Nan)
-        data['position'] = np.where(data['distance'] < -threshold, 1, data['position'])
+        data['position'] = np.where(data['zscore'] < -threshold, 1, data['position'])
+        # data['position'] = np.where(data['distance'] > threshold, -1, np.nan) 
+        # data['position'] = np.where(data['distance'] < -threshold, 1, data['position'])
+
         # crossing of current price and SMA (again, change each record with 0 or copy same data -1/1/Nan -> finally, all recored consist of -1/1/0/Nan)
-        data['position'] = np.where(data['distance'] *
-                                    data['distance'].shift(1) <0,
-                                    0, data['position'])
+        data['position'] = np.where(data['zscore'] * data['zscore'].shift(1)
+                                     < 0, 0, data['position'])
+        # data['position'] = np.where(data['distance'] *
+        #                             data['distance'].shift(1) <0,
+        #                             0, data['position'])
         data['position'] = data['position'].ffill().fillna(0) # Nanのレコードは前方のレコードの値を埋め込む。先頭付近の前方がないNanは０に置き換える。
         
         data['strategy'] = data['position'].shift(1) * data['return']
@@ -79,9 +87,15 @@ class MRVectorBacktester(MomVectorBacktester):
 
         return round(aperf, 2), round(operf, 2)
     
-    
     def update_and_run(self, params):
-        return -self.run_strategy(params[0], params[1])[0]
+        SMA = int(params[0])
+        if SMA < 1:
+            SMA = 1  # SMA=0 や SMA<0 を完全に防ぐ
+        threshold = float(params[1])
+        return -self.run_strategy(SMA, threshold)[0]
+
+    # def update_and_run(self, params):
+    #     return -self.run_strategy(params[0], params[1])[0]
 
     def optimize_parameters(self, SMA_range, threshold_range):
         opt = brute(self.update_and_run, (SMA_range, threshold_range),  finish=None)

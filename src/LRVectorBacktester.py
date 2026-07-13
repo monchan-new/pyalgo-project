@@ -178,7 +178,7 @@ class LRVectorBacktester:
         '''
         if self.results is None:
             print('No results to plot yet. Run a strategy.')
-        title = f'{self.symbol} | TC =  {self.tc:.4f}'
+        title = f'{self.symbol} | TC =  {self.tc:.6f}'
         self.results[['creturns', 'cstrategy']].plot(title=title,
                                                      figsize=(10,6)) 
         

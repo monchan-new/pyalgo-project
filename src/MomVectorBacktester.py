@@ -138,7 +138,7 @@ class MomVectorBacktester:
             print("No results to plot yet. Run a strategy.")
             return
 
-        title = f'{self.symbol} | TC = {self.tc:.4f}'
+        title = f'{self.symbol} | TC = {self.tc:.6f}'
         self.results[['creturns', 'cstrategy']].plot(title=title, figsize=(10, 6))
 
 

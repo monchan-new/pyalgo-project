@@ -11,6 +11,9 @@ import numpy as np
 import pandas as pd
 from sklearn import linear_model
 
+import tpqoa
+from scipy.optimize import brute
+
 class ScikitVectorBacktester:
     ''' Class for the vectorized backtesting of
     machine learning-based trading strategies.
@@ -30,6 +33,10 @@ class ScikitVectorBacktester:
     model: str
         either 'regression' or 'logistic'
 
+    (added)
+    granularity: str
+        granularity of target data
+
     Methods
     =======
     get_data:
@@ -46,12 +53,15 @@ class ScikitVectorBacktester:
         plots the performance of the strategy compared to the symbol
     '''
     
-    def __init__(self, symbol, start, end, amount, tc, model):
+    def __init__(self, symbol, start, end, amount, tc, model, granularity='D'):
         self.symbol = symbol
         self.start = start
         self.end = end
         self.amount = amount
-        self.tc = tc
+        self.tc = tc # for USD_JPN: 0.8Pips(0.008)/2 / 160 = 0.000025
+
+        self.granularity = granularity # example: 'D"
+
         self.results = None
         if model == 'regression':
             self.model = linear_model.LinearRegression()
@@ -60,19 +70,57 @@ class ScikitVectorBacktester:
                 solver='lbfgs', max_iter=1000)
         else:
             raise ValueError('Model not known or not yet implemented.')
+        
+
+        # API は1回だけ作る
+        self.api = tpqoa.tpqoa('/workspace/src/pyalgo_netting.cfg')
+
+
         self.get_data()
 
     def get_data(self):
         ''' Retrieves and prepares the data.
         '''
-        raw = pd.read_csv(
-            'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
-            index_col=0, parse_dates=True
-        ).dropna()
+        # --- ① OANDA からヒストリカルデータ取得 ---
+        df = self.api.get_history(
+            instrument=self.symbol,     # 例: 'EUR_USD'
+            # 日付及び時刻はUTCのベースの日付／時刻を指定する必要がある。
+            # 特に日足はNYのclose(UTC21:00/22:00)のタイミングでは区切られてはいるが、ラベルとして開始時刻の日付が付けられているために、通常の日中での日付の１日前となっていることに注意。(例：NYベースの2025年の1年間の日足を取るためには、start=2024-12-31とし、end=2025-12-30 を指定する。）
+            # ちなみに、この日足と同じ範囲の時間足を取るには（日足のラベルが開始時刻の日付であることを意識すると）Startが前年の12/31の日足ラベルの最初の時間足である2024-12-31 21:00となり、Endは当年の12/30の日足ラベルの最後の時間足である2025-12-31 20:00を指定すればよい。）
+            # 但し、時間足を取得する場合に日付を指定することもできるが、この場合にはUTC00:00の時刻指定とみなされることに注意。（例えば、日足を取る場合と同じstart/end日付を指定してしまうと、Start=2025-12-31(00:00)→これは12/31の00:00-20:00の時間足を余分に取り込んでいるだけ、End=2026-12-30(00:00)→これは12/30の1:00の時間足から12/31の20:00の時間足までが取り込まれていない。）
+            start=self.start, # '2009-12-31', '2009-12-31T21:00:00Z'
+            end=self.end,     # '2010-12-30', "2010-12-31T20:59:59Z"
+            granularity=self.granularity, # 'D', 'H1', 'M15', 'S5' など
+            price='M'                   # Mid価格（OHLC）
+        )
 
-        raw = pd.DataFrame(raw[self.symbol])
+        # --- ② 未確定足を除外（バックテストでは必須） ---
+        df = df[df['complete'] == True]
+
+        # --- ③ Index を datetime に変換 ---
+        df.index = pd.to_datetime(df.index)
+
+        # --- ④ 列名を統一（Hilpisch のコードと互換にする） ---
+        df.rename(columns={'o':'open','h':'high','l':'low','c':'close'}, inplace=True)
+
+        # --- ⑤ Hilpisch の raw と同じ構造に変換 ---
+        raw = pd.DataFrame(df['close'])
+        raw.rename(columns={'close': 'price'}, inplace=True)
+
+        # --- ⑥ 期間でフィルタリング ---
+            # 時間足対応は混乱するためにやめた。
+            # end_dt = pd.to_datetime(self.end) + pd.Timedelta(hours=23, minutes=59, seconds=59)
         raw = raw.loc[self.start:self.end]
-        raw.rename(columns={self.symbol: 'price'}, inplace=True)
+
+        # raw = pd.read_csv(
+        #     'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
+        #     index_col=0, parse_dates=True
+        # ).dropna()
+
+        # raw = pd.DataFrame(raw[self.symbol])
+        # raw = raw.loc[self.start:self.end]
+        # raw.rename(columns={self.symbol: 'price'}, inplace=True)
+
         raw['returns'] = np.log(raw / raw.shift(1))
         self.data = raw.dropna()
 
