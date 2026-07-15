@@ -155,8 +155,8 @@ class LRVectorBacktester:
         self.prepare_lags(start_out, end_out)
         prediction = np.sign(np.dot(self.lagged_data[self.cols], self.reg))
         self.results['prediction'] = prediction
-        self.results['strategy'] = self.results['prediction'] * \
-                                   self.results['returns']
+        self.results['strategy'] = self.results['prediction'].shift(1) * \
+                                    self.results['returns']
         # determine when a trade takes place
         trades = self.results['prediction'].diff().fillna(0) != 0
         # subtract transaction costs from return when trade takes place

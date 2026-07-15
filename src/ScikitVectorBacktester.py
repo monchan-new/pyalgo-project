@@ -157,8 +157,8 @@ class ScikitVectorBacktester:
         prediction = self.model.predict(
             self.data_subset[self.feature_columns])
         self.data_subset['prediction'] = prediction
-        self.data_subset['strategy'] = (self.data_subset['prediction'] * 
-                                   self.data_subset['returns'])
+        self.data_subset['strategy'] = (self.data_subset['prediction'].shift(1)
+                                         * self.data_subset['returns'])
         # determine when a trade takes place
         trades = self.data_subset['prediction'].diff().fillna(0) != 0
         # subtract transaction costs from return when trade takes place
