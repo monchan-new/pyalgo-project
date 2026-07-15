@@ -205,23 +205,22 @@ class NeuralNetworkVectorBacktester:
 
         # デフォルト Feature Range
         default_ranges = {
-            "momentum":   [],
-            "sma":        [],
-            "ema":        [],
-            "volatility": [],
-            "range":      [],
+            "momentum":   5,
+            "sma":        20,
+            "ema":        10,
+            "volatility": 20,
+            "range":      14,
         }
 
-        # None の場合はデフォルト値を使う
+        # ★ None の場合はデフォルト値を使う（これが本来の姿）
         momentum   = momentum   if momentum   is not None else default_ranges["momentum"]
         sma        = sma        if sma        is not None else default_ranges["sma"]
         ema        = ema        if ema        is not None else default_ranges["ema"]
         volatility = volatility if volatility is not None else default_ranges["volatility"]
-        range_     = range_      if range_      is not None else default_ranges["range"]
+        range_     = range_     if range_     is not None else default_ranges["range"]
 
-        # feature_config を自動生成
         feature_config = {
-            "lag": [],  # lag は 後でlags から自動生成
+            "lag": [],
             "momentum":   [momentum],
             "volatility": [volatility],
             "sma":        [sma],
