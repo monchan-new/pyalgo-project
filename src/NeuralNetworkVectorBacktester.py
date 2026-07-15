@@ -144,9 +144,13 @@ class NeuralNetworkVectorBacktester:
             col for col in data.columns if col not in ["price", "returns"]
         ]
 
-        self.mu = data[self.feature_columns].mean()
-        self.std = data[self.feature_columns].std()
-        data[self.feature_columns] = (data[self.feature_columns] - self.mu) /self.std
+        # ★ 標準化はここでは計算しない
+        # ★ mu,std は fit_model() で計算済みのものを使う
+        if hasattr(self, "mu"):
+            data[self.feature_columns] = (data[self.feature_columns] - self.mu) / self.std
+        # self.mu = data[self.feature_columns].mean()
+        # self.std = data[self.feature_columns].std()
+        # data[self.feature_columns] = (data[self.feature_columns] - self.mu) /self.std
 
         self.data_subset = data
 
@@ -177,22 +181,54 @@ class NeuralNetworkVectorBacktester:
         X = self.data_subset[self.feature_columns]
         y = np.where(self.data_subset['returns'] > 0, 1, 0)
 
+        # ★ 学習期間で mu,std を計算
+        self.mu = X.mean()
+        self.std = X.std()
+        # ★ 学習期間を標準化
+        X = (X - self.mu) / self.std
+
         self.model = self.build_model(len(self.feature_columns))
         self.model.fit(X, y, epochs=self.epochs, verbose=False)
 
     # -----------------------------
     # 6. バックテスト実行
     # -----------------------------
-    def run_strategy(self, start_in, end_in, start_out, end_out, lags,feature_config=None):
-        if feature_config is None:
-            feature_config = {
-                "lag": [], # lag は lags で自動生成されるので空でOK
-                "momentum": [5],
-                "volatility": [20],
-                "sma": [20],
-                "ema": [10],
-                "range": [14],
-            }
+    def run_strategy(self,
+                 start_in, end_in,
+                 start_out, end_out,
+                 lags=3,
+                 momentum=None,
+                 sma=None,
+                 ema=None,
+                 volatility=None,
+                 range_=None):
+
+        # デフォルト Feature Range
+        default_ranges = {
+            "momentum":   [],
+            "sma":        [],
+            "ema":        [],
+            "volatility": [],
+            "range":      [],
+        }
+
+        # None の場合はデフォルト値を使う
+        momentum   = momentum   if momentum   is not None else default_ranges["momentum"]
+        sma        = sma        if sma        is not None else default_ranges["sma"]
+        ema        = ema        if ema        is not None else default_ranges["ema"]
+        volatility = volatility if volatility is not None else default_ranges["volatility"]
+        range_     = range_      if range_      is not None else default_ranges["range"]
+
+        # feature_config を自動生成
+        feature_config = {
+            "lag": [],  # lag は 後でlags から自動生成
+            "momentum":   [momentum],
+            "volatility": [volatility],
+            "sma":        [sma],
+            "ema":        [ema],
+            "range":      [range_],
+        }
+
         self.lags = lags
         self.feature_config = feature_config
         self.fit_model(start_in, end_in)
@@ -241,16 +277,20 @@ class NeuralNetworkVectorBacktester:
         volatility = int(params[4])
         range_ = int(params[5])
 
-        feature_config = {
-            "lag": [],  # lag は後で lags から自動生成する
-            "momentum": [momentum],
-            "volatility": [volatility],
-            "sma": [sma],
-            "ema": [ema],
-            "range": [range_],
-        }
+        print('lags=',lags,'mom=',momentum, "sma=",sma,
+               "ema=",ema, "volatility=",volatility, "range=",range_)
 
-        return -self.run_strategy(self.start_in, self.end_in, self.start_out, self.end_out, lags, feature_config)[0]
+        return -self.run_strategy(
+            self.start_in, self.end_in,
+            self.start_out, self.end_out,
+            lags=lags,
+            momentum=momentum,
+            sma=sma,
+            ema=ema,
+            volatility=volatility,
+            range_=range_
+        )[0]
+
 
 
     def optimize_parameters(self,
@@ -277,7 +317,7 @@ class NeuralNetworkVectorBacktester:
 
         # デフォルト Range
         default_ranges = {
-            "lags":        (3, 11, 2),     # 3,5,7,9
+            "lags":        (3, 51, 10),     # 3,13,23,33,43
             "momentum":    (5, 11, 5),     # 5,10
             "sma":         (20, 51, 30),   # 20,50
             "ema":         (10, 21, 10),   # 10,20
