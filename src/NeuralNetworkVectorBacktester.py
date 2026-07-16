@@ -8,6 +8,9 @@
 #
 import numpy as np
 import pandas as pd
+
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Sequential
@@ -16,6 +19,10 @@ from tensorflow.keras.optimizers import Adam
 
 import tpqoa
 from scipy.optimize import brute
+
+# 乱数シードを固定化する。
+np.random.seed(42)
+tf.random.set_seed(42)
 
 class NeuralNetworkVectorBacktester:
     '''
@@ -132,27 +139,24 @@ class NeuralNetworkVectorBacktester:
 
     def prepare_features(self, start, end):
         data = self.select_data(start,end)
-        # lag配列をlagsの指定値に併せて自動生成
-        self.feature_config["lag"] = list(range(1, self.lags + 1)) # 念のためにここでもlag配列をセットしておく。
+        # # lag配列をlagsの指定値に併せて自動生成
+        # self.feature_config["lag"] = list(range(1, self.lags + 1)) # 念のためにここでもlag配列をセットしておく。
 
         # ★ 追加特徴量生成
         self.add_features(data)
-        data.dropna(inplace=True)
+        # price と returns の NaN だけ除外する
+        data = data.dropna(subset=["price", "returns"])
+        # data.dropna(inplace=True)
 
-        # ★ 標準化対象は特徴量のみ
-        self.feature_columns = [
-            col for col in data.columns if col not in ["price", "returns"]
-        ]
-
-        # ★ 標準化はここでは計算しない
-        # ★ mu,std は fit_model() で計算済みのものを使う
+        # ★ テスト期間のデータについてのみここで標準化するが、平均・標準偏差は学習期間で求めたもの、つまりmu,std は fit_model() で計算したものを使う
         if hasattr(self, "mu"):
             data[self.feature_columns] = (data[self.feature_columns] - self.mu) / self.std
-        # self.mu = data[self.feature_columns].mean()
-        # self.std = data[self.feature_columns].std()
-        # data[self.feature_columns] = (data[self.feature_columns] - self.mu) /self.std
 
         self.data_subset = data
+
+        print("prepare_features: rows =", len(data))
+        # print("prepare_features: EMA20 NaN count =", data['ema_20'].isna().sum() if 'ema_20' in data.columns else "NO COLUMN")
+
 
     # -----------------------------
     # 4. NN モデル構築
@@ -174,13 +178,44 @@ class NeuralNetworkVectorBacktester:
     # 5. モデル学習
     # -----------------------------
     def fit_model(self, start, end):
-        # lag配列をlagsの指定値に併せて自動生成
-        self.feature_config["lag"] = list(range(1, self.lags + 1))
+        # ★ JupyterLabの実行を踏まえて、前回の試行の値をリセット
+        self.feature_columns = []
+        if hasattr(self, "mu"): del self.mu
+        if hasattr(self, "std"): del self.std
+        self.model = None
+        self.data_subset = None
+
+        # 乱数シードを固定化する。
+        np.random.seed(42)
+        tf.random.set_seed(42)
+
+
+
+        # # lag配列をlagsの指定値に併せて自動生成
+        # self.feature_config["lag"] = list(range(1, self.lags + 1))
+
+        # まず特徴量を生成する
         self.prepare_features(start, end)
 
-        X = self.data_subset[self.feature_columns]
+        # ★ prepare_features の後で feature_columns を決める
+        self.feature_columns = [
+            col for col in self.data_subset.columns
+            if col not in ["price", "returns"]
+        ]
+
+        # ★ １つ前のFeature を入力として、
+        X = self.data_subset[self.feature_columns].shift(1)
+        # ★ 本日のリターン（をコード化したもの：1/0）をターゲットにする
         y = np.where(self.data_subset['returns'] > 0, 1, 0)
 
+        # shift による NaN を除外
+        valid = X.notna().all(axis=1)
+        X = X[valid]
+        y = y[valid]
+        
+        print("fit_model: valid rows =", valid.sum())
+
+    
         # ★ 学習期間で mu,std を計算
         self.mu = X.mean()
         self.std = X.std()
@@ -189,6 +224,10 @@ class NeuralNetworkVectorBacktester:
 
         self.model = self.build_model(len(self.feature_columns))
         self.model.fit(X, y, epochs=self.epochs, verbose=False)
+
+        # print("TRAIN columns:", self.data_subset.columns.tolist())
+        # print("TRAIN feature_columns:", self.feature_columns)
+
 
     # -----------------------------
     # 6. バックテスト実行
@@ -220,7 +259,7 @@ class NeuralNetworkVectorBacktester:
         range_     = range_     if range_     is not None else default_ranges["range"]
 
         feature_config = {
-            "lag": [],
+            "lag": list(range(1, lags + 1)), # lag配列をlagsの指定値に併せて自動生成
             "momentum":   [momentum],
             "volatility": [volatility],
             "sma":        [sma],
@@ -235,7 +274,27 @@ class NeuralNetworkVectorBacktester:
         # テストデータ準備
         self.prepare_features(start_out, end_out)
 
-        X = self.data_subset[self.feature_columns]
+        # print("TEST columns:", self.data_subset.columns.tolist())
+        # print("TEST feature_columns:", self.feature_columns)
+
+
+        # # ★ テスト期間の特徴量を再度決定する（学習時と同じ方法）
+        # self.feature_columns = [
+        #     col for col in self.data_subset.columns
+        #     if col not in ["price", "returns"]
+        # ]
+
+        # ★ １つ前のFeature を使用する
+        X = self.data_subset[self.feature_columns].shift(1)
+        # X = self.data_subset[self.feature_columns]
+
+        # shift による NaN を除外
+        valid = X.notna().all(axis=1)
+        X = X[valid]
+        self.data_subset = self.data_subset[valid]
+
+        print("run_strategy: valid rows =", valid.sum())
+
 
         # NN の確率出力
         pred_prob = self.model.predict(X).flatten()
@@ -247,9 +306,8 @@ class NeuralNetworkVectorBacktester:
         )
 
         # 戦略リターン
-            # self.data_subset['strategy'] = (self.data_subset['prediction'] * 
-            #                            self.data_subset['returns'])
-        self.data_subset['strategy'] = self.data_subset['prediction'].shift(1) * self.data_subset['returns']
+        # ★ PredictionはReturnの行にセットしてあるためShift(1)は不要。
+        self.data_subset['strategy'] = self.data_subset['prediction'] * self.data_subset['returns']
 
         # トレードコスト
         trades = self.data_subset['prediction'].diff().fillna(0) != 0
@@ -278,8 +336,8 @@ class NeuralNetworkVectorBacktester:
 
         print('lags=',lags,'mom=',momentum, "sma=",sma,
                "ema=",ema, "volatility=",volatility, "range=",range_)
-
-        return -self.run_strategy(
+        
+        perf = self.run_strategy(
             self.start_in, self.end_in,
             self.start_out, self.end_out,
             lags=lags,
@@ -288,7 +346,20 @@ class NeuralNetworkVectorBacktester:
             ema=ema,
             volatility=volatility,
             range_=range_
-        )[0]
+        )
+        print('performance=', perf)
+
+        return -perf[0]
+        # return -self.run_strategy(
+        #     self.start_in, self.end_in,
+        #     self.start_out, self.end_out,
+        #     lags=lags,
+        #     momentum=momentum,
+        #     sma=sma,
+        #     ema=ema,
+        #     volatility=volatility,
+        #     range_=range_
+        # )[0]
 
 
 
@@ -316,7 +387,7 @@ class NeuralNetworkVectorBacktester:
 
         # デフォルト Range
         default_ranges = {
-            "lags":        (3, 51, 10),     # 3,13,23,33,43
+            "lags":        (3, 12, 4),     # 3,7,11
             "momentum":    (5, 11, 5),     # 5,10
             "sma":         (20, 51, 30),   # 20,50
             "ema":         (10, 21, 10),   # 10,20
