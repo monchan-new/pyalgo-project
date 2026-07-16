@@ -8,9 +8,8 @@
 #
 import numpy as np
 import pandas as pd
+import random
 
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Sequential
@@ -20,9 +19,6 @@ from tensorflow.keras.optimizers import Adam
 import tpqoa
 from scipy.optimize import brute
 
-# 乱数シードを固定化する。
-np.random.seed(42)
-tf.random.set_seed(42)
 
 class NeuralNetworkVectorBacktester:
     '''
@@ -85,8 +81,8 @@ class NeuralNetworkVectorBacktester:
         raw = pd.DataFrame(df['close'])
         raw.rename(columns={'close': 'price'}, inplace=True)
 
-        # --- ⑥ 期間でフィルタリング ---
-        raw = raw.loc[self.start:self.end]
+        # # --- ⑥ 期間でフィルタリング ---
+        # raw = raw.loc[self.start:self.end]
 
         # raw = pd.read_csv(
         #     'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
@@ -139,14 +135,10 @@ class NeuralNetworkVectorBacktester:
 
     def prepare_features(self, start, end):
         data = self.select_data(start,end)
-        # # lag配列をlagsの指定値に併せて自動生成
-        # self.feature_config["lag"] = list(range(1, self.lags + 1)) # 念のためにここでもlag配列をセットしておく。
 
         # ★ 追加特徴量生成
         self.add_features(data)
-        # price と returns の NaN だけ除外する
-        data = data.dropna(subset=["price", "returns"])
-        # data.dropna(inplace=True)
+        data.dropna(inplace=True)
 
         # ★ テスト期間のデータについてのみここで標準化するが、平均・標準偏差は学習期間で求めたもの、つまりmu,std は fit_model() で計算したものを使う
         if hasattr(self, "mu"):
@@ -155,7 +147,6 @@ class NeuralNetworkVectorBacktester:
         self.data_subset = data
 
         print("prepare_features: rows =", len(data))
-        # print("prepare_features: EMA20 NaN count =", data['ema_20'].isna().sum() if 'ema_20' in data.columns else "NO COLUMN")
 
 
     # -----------------------------
@@ -178,21 +169,12 @@ class NeuralNetworkVectorBacktester:
     # 5. モデル学習
     # -----------------------------
     def fit_model(self, start, end):
-        # ★ JupyterLabの実行を踏まえて、前回の試行の値をリセット
+        # ★ JupyterLabの実行を想定して、前回の試行の値をリセット
         self.feature_columns = []
         if hasattr(self, "mu"): del self.mu
         if hasattr(self, "std"): del self.std
         self.model = None
         self.data_subset = None
-
-        # 乱数シードを固定化する。
-        np.random.seed(42)
-        tf.random.set_seed(42)
-
-
-
-        # # lag配列をlagsの指定値に併せて自動生成
-        # self.feature_config["lag"] = list(range(1, self.lags + 1))
 
         # まず特徴量を生成する
         self.prepare_features(start, end)
@@ -203,8 +185,16 @@ class NeuralNetworkVectorBacktester:
             if col not in ["price", "returns"]
         ]
 
+        # ★ 学習期間で mu,std を計算（テキストと同じタイミング）
+        self.mu = self.data_subset[self.feature_columns].mean()
+        self.std = self.data_subset[self.feature_columns].std()
+
+        # ★ 学習データを標準化（テキストと同じタイミング）
+        X = (self.data_subset[self.feature_columns] - self.mu) / self.std
+
+
         # ★ １つ前のFeature を入力として、
-        X = self.data_subset[self.feature_columns].shift(1)
+        X = X.shift(1)
         # ★ 本日のリターン（をコード化したもの：1/0）をターゲットにする
         y = np.where(self.data_subset['returns'] > 0, 1, 0)
 
@@ -213,20 +203,19 @@ class NeuralNetworkVectorBacktester:
         X = X[valid]
         y = y[valid]
         
+
         print("fit_model: valid rows =", valid.sum())
 
-    
-        # ★ 学習期間で mu,std を計算
-        self.mu = X.mean()
-        self.std = X.std()
-        # ★ 学習期間を標準化
-        X = (X - self.mu) / self.std
+
+        # 乱数シードをここで固定化する。
+        random.seed(42)        
+        np.random.seed(42)
+        tf.random.set_seed(42)
 
         self.model = self.build_model(len(self.feature_columns))
-        self.model.fit(X, y, epochs=self.epochs, verbose=False)
-
-        # print("TRAIN columns:", self.data_subset.columns.tolist())
-        # print("TRAIN feature_columns:", self.feature_columns)
+        # バッチ順序のシャッフルを止めて、計算結果がばらつかないようにする。
+        self.model.fit(X, y, epochs=self.epochs, verbose=False, shuffle=False)
+        # self.model.fit(X, y, epochs=self.epochs, verbose=False)
 
 
     # -----------------------------
@@ -274,24 +263,14 @@ class NeuralNetworkVectorBacktester:
         # テストデータ準備
         self.prepare_features(start_out, end_out)
 
-        # print("TEST columns:", self.data_subset.columns.tolist())
-        # print("TEST feature_columns:", self.feature_columns)
-
-
-        # # ★ テスト期間の特徴量を再度決定する（学習時と同じ方法）
-        # self.feature_columns = [
-        #     col for col in self.data_subset.columns
-        #     if col not in ["price", "returns"]
-        # ]
-
         # ★ １つ前のFeature を使用する
         X = self.data_subset[self.feature_columns].shift(1)
-        # X = self.data_subset[self.feature_columns]
 
         # shift による NaN を除外
         valid = X.notna().all(axis=1)
         X = X[valid]
         self.data_subset = self.data_subset[valid]
+
 
         print("run_strategy: valid rows =", valid.sum())
 
