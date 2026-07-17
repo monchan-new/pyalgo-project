@@ -148,8 +148,20 @@ class ScikitVectorBacktester:
         self.data_subset = None
 
         self.prepare_features(start, end)
-        self.model.fit(self.data_subset[self.feature_columns],
-                              np.sign(self.data_subset['returns']))
+
+        # ★ 前日の特徴量を使う（未来リーク防止）
+        X = self.data_subset[self.feature_columns].shift(1)
+        y = np.sign(self.data_subset['returns'])
+
+        # NaN を除外
+        valid = X.notna().all(axis=1)
+        X = X[valid]
+        y = y[valid]
+
+        # 学習
+        self.model.fit(X, y)
+        # self.model.fit(self.data_subset[self.feature_columns],
+        #                       np.sign(self.data_subset['returns']))
 
     def run_strategy(self, start_in, end_in, start_out, end_out, lags=3):
         ''' Backtests the trading strategy.
@@ -158,11 +170,21 @@ class ScikitVectorBacktester:
         self.fit_model(start_in, end_in)
 
         self.prepare_features(start_out, end_out)
-        prediction = self.model.predict(
-            self.data_subset[self.feature_columns])
+
+        # ★ 前日の特徴量で予測
+        X = self.data_subset[self.feature_columns].shift(1)
+
+        valid = X.notna().all(axis=1)
+        X = X[valid]
+        self.data_subset = self.data_subset[valid]
+
+        prediction = self.model.predict(X)
+        # prediction = self.model.predict(
+        #     self.data_subset[self.feature_columns])
         self.data_subset['prediction'] = prediction
-        self.data_subset['strategy'] = (self.data_subset['prediction'].shift(1)
-                                         * self.data_subset['returns'])
+        # ★ 当日のPredictionは当日のレコードに書き込まれているを使用する（shift 不要）
+        self.data_subset['strategy'] = (self.data_subset['prediction'] * 
+                                        self.data_subset['returns'])
         # determine when a trade takes place
         trades = self.data_subset['prediction'].diff().fillna(0) != 0
         # subtract transaction costs from return when trade takes place
