@@ -143,6 +143,10 @@ class ScikitVectorBacktester:
     def fit_model(self, start, end):
         ''' Implements the fitting step.
         '''
+        # --- JupyterLab対策としての初期化 ---
+        self.feature_columns = []
+        self.data_subset = None
+
         self.prepare_features(start, end)
         self.model.fit(self.data_subset[self.feature_columns],
                               np.sign(self.data_subset['returns']))
@@ -152,7 +156,7 @@ class ScikitVectorBacktester:
         '''
         self.lags = lags
         self.fit_model(start_in, end_in)
-        # data = self.select_data(start_out, end_out)
+
         self.prepare_features(start_out, end_out)
         prediction = self.model.predict(
             self.data_subset[self.feature_columns])
@@ -185,55 +189,50 @@ class ScikitVectorBacktester:
         self.results[['creturns', 'cstrategy']].plot(title=title,
                                                      figsize=(10,6)) 
 
-    
+    # 日付は固定でLagsだけOptimizeしたバージョン
     def update_and_run(self, params):
-        # params = [T_in, lags]
-        T_in = int(params[0])
-        lags = int(params[1])
+        # brute は params を array(36) のような 0次元配列で渡すことがある
+        try:
+            lags = int(params)
+        except TypeError:
+            # もし配列なら中身を取り出す
+            lags = int(params.item())
 
-        # --- ① target_start はユーザーがズバリ指定 ---
-        target_start = pd.to_datetime(self.target_start)
+        # すでにセット済みの固定日付を使う
+        start_in  = self.start_in
+        end_in    = self.end_in
+        start_out = self.start_out
+        end_out   = self.end_out
 
-        # --- ② Out の長さは引数で指定 ---
-        target_end = target_start + pd.Timedelta(days=self.out_len_days - 1)
-
-        # --- ③ 学習期間（In）は直近の T_in 日間 ---
-        start_in = target_start - pd.Timedelta(days=T_in)
-        end_in   = target_start - pd.Timedelta(days=1)
-
-        # Outはstart_outからout_len_days(例：１週間)だけとする。
-        start_out = target_start
-        end_out   = target_end
-
-        print("lags", lags)
-        print("start/end_in", start_in, end_in)
-        print("start/end_out", start_out, end_out)
-
-        # --- ⑤ 実行 ---
         return -self.run_strategy(start_in, end_in, start_out, end_out, lags)[0]
 
-    def optimize_parameters(self, T_in_range, lags_range,
-                        target_start, out_len_days=7):
-        
-        ''' usage:
-        T_in_range  = (20, 260, 20)   # 学習期間:20〜260日
-        lags_range  = (1, 30, 1)      # lags:1〜30
-        target_start = "2025-01-01"   # この週を検証したい
-        out_len_days = 7              # Out の長さを指定(7日)
-        '''
-        # 検証したい週の開始日と Out の長さをセット
-        self.target_start = target_start
-        self.out_len_days = out_len_days
 
+    def optimize_parameters(self, lags_range,
+                            start_in, end_in, start_out, end_out):
+        """
+        使い方のイメージ：
+        scibt.optimize_parameters((3, 50, 1),
+                                '2002-5-6', '2005-12-31',
+                                '2006-1-1', '2009-12-31')
+        """
+
+        # 固定の日付をセット
+        self.start_in  = start_in
+        self.end_in    = end_in
+        self.start_out = start_out
+        self.end_out   = end_out
+
+        # lags だけを brute で探索
         opt = brute(self.update_and_run,
-                    (T_in_range, lags_range),
+                    (lags_range,),
                     finish=None)
 
-        best_T_in  = int(opt[0])
-        best_lags  = int(opt[1])
-        best_perf  = -self.update_and_run(opt)
+        best_lags = int(opt)
+        best_perf = -self.update_and_run(opt)
 
-        return (best_T_in, best_lags), best_perf
+        return best_lags, best_perf
+
+
 
 
 

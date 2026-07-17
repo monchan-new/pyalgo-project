@@ -146,7 +146,7 @@ class NeuralNetworkVectorBacktester:
 
         self.data_subset = data
 
-        print("prepare_features: rows =", len(data))
+        # print("prepare_features: rows =", len(data))
 
 
     # -----------------------------
@@ -204,17 +204,18 @@ class NeuralNetworkVectorBacktester:
         y = y[valid]
         
 
-        print("fit_model: valid rows =", valid.sum())
+        # print("fit_model: valid rows =", valid.sum())
 
 
-        # 乱数シードをここで固定化する。
+        # 乱数シードをここで固定化し、計算結果がばらつかないようにする。
         random.seed(42)        
         np.random.seed(42)
         tf.random.set_seed(42)
 
         self.model = self.build_model(len(self.feature_columns))
-        # バッチ順序のシャッフルを止めて、計算結果がばらつかないようにする。
-        self.model.fit(X, y, epochs=self.epochs, verbose=False, shuffle=False)
+        # テキスト同様にsplitとshuffleを追加した。
+        self.model.fit(X, y, epochs=self.epochs, verbose=False, 
+    validation_split=0.2, shuffle=False)
         # self.model.fit(X, y, epochs=self.epochs, verbose=False)
 
 
@@ -232,6 +233,7 @@ class NeuralNetworkVectorBacktester:
                  range_=None):
 
         # デフォルト Feature Range
+        # 一つのFeatureについて複数の期間をリスト形式で指定できる。（例えば[10, 20]->sma10/sma20）しかし、実際には特徴量が多くなりすぎるため、Defaultとしては単一の値を設定している。
         default_ranges = {
             "momentum":   5,
             "sma":        20,
@@ -272,7 +274,7 @@ class NeuralNetworkVectorBacktester:
         self.data_subset = self.data_subset[valid]
 
 
-        print("run_strategy: valid rows =", valid.sum())
+        # print("run_strategy: valid rows =", valid.sum())
 
 
         # NN の確率出力
