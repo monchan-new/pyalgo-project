@@ -81,6 +81,7 @@ class NeuralNetworkVectorBacktester:
         raw = pd.DataFrame(df['close'])
         raw.rename(columns={'close': 'price'}, inplace=True)
 
+
         # # --- ⑥ 期間でフィルタリング ---
         # raw = raw.loc[self.start:self.end]
 
@@ -94,6 +95,13 @@ class NeuralNetworkVectorBacktester:
 
         raw['returns'] = np.log(raw / raw.shift(1))
         self.data = raw.dropna()
+
+        # Kelly fractionの計算
+        mu = self.data['returns'].mean() * 252
+        sigma = self.data['returns'].std() * 252 ** 0.5
+        r = 0.0
+        f = (mu - r) / sigma **2
+        print(f)
 
     # -----------------------------
     # 2. データ選択

@@ -195,6 +195,9 @@ class ScikitVectorBacktester:
         self.data_subset['cstrategy'] = (self.amount * \
                         self.data_subset['strategy'].cumsum().apply(np.exp))
         self.results = self.data_subset
+
+        # print(self.results)
+
         # absolute performance of the strategy
         aperf = self.results['cstrategy'].iloc[-1]
         # out-/underperformance of strategy
