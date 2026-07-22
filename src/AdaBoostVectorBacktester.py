@@ -13,7 +13,8 @@ class AdaBoostVectorBacktester:
     """
 
     def __init__(self, symbol, start, end, amount,
-                 tc=0.000025,
+                tc=0.00010599557439495706,
+                #  tc=0.000025,
                  granularity='M10',
                  n_estimators=15,
                  max_depth=2,
@@ -44,9 +45,6 @@ class AdaBoostVectorBacktester:
         self.feature_columns = None
         self.results = None
 
-        # 特徴量設定
-        self.feature_config = None
-
         # データ取得
         self.get_data()
 
@@ -65,10 +63,18 @@ class AdaBoostVectorBacktester:
 
         raw = raw[raw['complete'] == True]
         raw.index = pd.to_datetime(raw.index)
+
+        # print("BT raw index head:", raw.index[:10])
+        # print("BT raw index tail:", raw.index[-10:])
+        # print("BT raw shape:", raw.shape)
+
         raw.rename(columns={'c': 'price'}, inplace=True)
+        raw = pd.DataFrame(raw['price'])
 
         raw['returns'] = np.log(raw['price'] / raw['price'].shift(1))
-        self.data = raw.dropna()
+        self.data = raw
+
+        # print(raw)
 
 
     # -----------------------------
@@ -80,103 +86,79 @@ class AdaBoostVectorBacktester:
 
 
     # -----------------------------
-    # 3. 特徴量生成
+    # 4. 特徴量準備
     # -----------------------------
-    def add_features(self, data):
-        # momentum
-        for k in self.feature_config.get("momentum", []):
-            data[f"mom_{k}"] = data["price"] - data["price"].shift(k)
+    def prepare_features_all(self, window, lags):
+        # df = self.data.copy()
 
-        # volatility
-        for k in self.feature_config.get("volatility", []):
-            data[f"vol_{k}"] = data["returns"].rolling(k).std()
+        # rolling
+        self.data['vol'] = self.data['returns'].rolling(window).std()
+        self.data['mom'] = np.sign(self.data['returns'].rolling(window).mean())
+        self.data['sma'] = self.data['price'].rolling(window).mean()
+        self.data['min'] = self.data['price'].rolling(window).min()
+        self.data['max'] = self.data['price'].rolling(window).max()
 
-        # SMA
-        for k in self.feature_config.get("sma", []):
-            data[f"sma_{k}"] = data["price"].rolling(k).mean()
-
-        # # Range
-        # for k in self.feature_config.get("range", []):
-        #     data[f"range_{k}"] = (
-        #         data["price"].rolling(k).max() - data["price"].rolling(k).min()
-        #     )
-
-        # Min
-        for k in self.feature_config.get("min", []):
-            data[f"min_{k}"] = data["price"].rolling(k).min()
-
-        # Max
-        for k in self.feature_config.get("max", []):
-            data[f"max_{k}"] = data["price"].rolling(k).max()
+        # print(self.data)
 
 
+        df = self.data.copy()
+        # lag
+        for f in ['returns', 'vol', 'mom', 'sma', 'min', 'max']:
+            for lag in range(1, lags + 1):
+                df[f"{f}_lag_{lag}"] = df[f].shift(lag)
+
+        df.dropna(inplace=True)
+
+        # print(df)
+
+        return df
 
     # -----------------------------
-    # 4. 特徴量準備（標準化含む）
+    # 6. バックテスト実行
     # -----------------------------
-    def prepare_features(self, start, end):
-        data = self.select_data(start, end)
+    def run_strategy(self,
+                 start_in, end_in,
+                 start_out, end_out,
+                 lags=6,
+                 window=20):
+        
+        # ★ 内部状態だけ初期化（self.data は初期化しない）
+        self.data_subset = None
+        self.feature_columns = None
+        self.results = None
+        self.model = None
 
-        self.add_features(data)
-        data.dropna(inplace=True)
+        # print(self.data)
 
-        # テスト期間の標準化（学習期間の mu/std を使う）
-        if hasattr(self, "mu"):
-            data[self.feature_columns] = (data[self.feature_columns] - self.mu) / self.std
+        self.lags = lags
+        self.window = window
 
-        self.data_subset = data
-
-    # -----------------------------
-    #   縦方向の過去行を横に展開する
-    # -----------------------------
-
-    def make_lag_matrix(self, X, lags):
-        lagged = []
-        for i in range(1, lags + 1):
-            lagged.append(X.shift(i))
-        lagged = pd.concat(lagged, axis=1)
-
-        # 列名を f"{col}_lag_{i}" にする
-        lagged.columns = [
-            f"{col}_lag_{i}"
-            for i in range(1, lags + 1)
-            for col in X.columns
-        ]
-        return lagged
-
-
-
-    # -----------------------------
-    # 5. モデル学習
-    # -----------------------------
-    def fit_model(self, start, end):
-
-        # 特徴量生成
-        self.prepare_features(start, end)
-
-        # 特徴量列（return, vol, mom, sma, min, max）
+        # 全期間の特徴量を作る
+        df = self.prepare_features_all(window, lags)
+        
+        # lag 展開後の特徴量だけを使う列を定義
         self.feature_columns = [
-            col for col in self.data_subset.columns
-            if col not in ["price", "returns"]
+            col for col in df.columns
+            if "lag_" in col
         ]
 
-        # 標準化
-        self.mu = self.data_subset[self.feature_columns].mean()
-        self.std = self.data_subset[self.feature_columns].std()
+        # print(df[self.feature_columns])
 
-        X = (self.data_subset[self.feature_columns] - self.mu) / self.std
+        # train / test を日付で切る
+        train = df.loc[start_in:end_in].copy()
+        test  = df.loc[start_out:end_out].copy()
 
-        # ★ 過去 Lags 行を横に展開
-        X = self.make_lag_matrix(X, self.lags)
+        # 標準化の基準は train から取る
+        X_train = train[self.feature_columns]
+        self.mu = X_train.mean()
+        self.std = X_train.std()
+        X_train = (X_train - self.mu) / self.std
 
-        # 欠ける部分を除去
-        valid = X.notna().all(axis=1)
-        X = X[valid]
+        # print(train,X_train)
 
-        self.data_subset = self.data_subset[valid]
-        y = np.where(self.data_subset['returns'] > 0, 1, -1)
+        y_train = np.where(train['returns'] > 0, 1, -1)
 
-        # AdaBoost 学習
+        # ⑤ モデル定義＆学習
         dtc = DecisionTreeClassifier(
             random_state=self.random_state,
             max_depth=self.max_depth,
@@ -187,82 +169,48 @@ class AdaBoostVectorBacktester:
             n_estimators=self.n_estimators,
             random_state=self.random_state
         )
-        self.model.fit(X, y)
 
-
-
-    # -----------------------------
-    # 6. バックテスト実行
-    # -----------------------------
-    def run_strategy(self,
-                 start_in, end_in,
-                 start_out, end_out,
-                 lags=6,
-                 momentum=5,
-                 sma=20,
-                 volatility=20,
-                #  range_=14,
-                 min_window=20,
-                 max_window=20):
-
-
-        # 特徴量設定
-        self.feature_config = {
-            # "lag": list(range(1, lags + 1)),  # ← これはもう不要
-            "momentum":   [momentum],
-            "volatility": [volatility],
-            "sma":        [sma],
-            # "range":      [range_],
-            "min":        [min_window],
-            "max":        [max_window],
-        }
-        self.lags = lags  # ← fit_model / make_lag_matrix で使うのでここでセット
-
-
-        # 学習
-        self.fit_model(start_in, end_in)
-
-        # テスト特徴量生成
-        self.prepare_features(start_out, end_out)
         
-        X = self.data_subset[self.feature_columns]
+        self.model.fit(X_train, y_train)
+        # print(X_train,y_train)
 
-        # ★ 過去 Lags 行を横に展開
-        X = self.make_lag_matrix(X, self.lags)
+        
 
-        # shift(1)（未来リーク防止）
-        X = X.shift(1)
-        # X = self.data_subset[self.feature_columns].shift(1)
-
-        valid = X.notna().all(axis=1)
-        X = X[valid]
-        self.data_subset = self.data_subset[valid]
+        # テスト側も同じ特徴量＋同じ標準化
+        X_test = test[self.feature_columns]
+        X_test = (X_test - self.mu) / self.std
 
         # 予測
-        prediction = self.model.predict(X)
-        self.data_subset['prediction'] = prediction
+        test['prediction'] = self.model.predict(X_test)
+
+        # print(X_test, test['prediction'])
 
         # 戦略リターン
-        self.data_subset['strategy'] = (
-            self.data_subset['prediction'] * self.data_subset['returns']
+        test['strategy'] = (
+            test['prediction'] * test['returns']
         )
 
         # コスト
-        trades = self.data_subset['prediction'].diff().fillna(0) != 0
-        self.data_subset.loc[trades, 'strategy'] -= self.tc
+        trades = test['prediction'].diff().fillna(0) != 0
+        test.loc[trades, 'strategy'] -= self.tc
 
         # 累積リターン
-        self.data_subset['creturns'] = (
-            self.amount * np.exp(self.data_subset['returns'].cumsum())
+        test['creturns'] = (
+            self.amount * np.exp(test['returns'].cumsum())
         )
-        self.data_subset['cstrategy'] = (
-            self.amount * np.exp(self.data_subset['strategy'].cumsum())
+        test['cstrategy'] = (
+            self.amount * np.exp(test['strategy'].cumsum())
         )
 
-        self.results = self.data_subset
+        # ⑧ 結果を保存
+        self.data_subset = test
+        self.results = test
 
         aperf = self.results['cstrategy'].iloc[-1]
         operf = aperf - self.results['creturns'].iloc[-1]
+
+        print(aperf)
+
         return round(aperf, 2), round(operf, 2)
 
 
@@ -277,11 +225,11 @@ class AdaBoostVectorBacktester:
         title = (
             f"{self.symbol} | AdaBoost Strategy | "
             f"lags={self.lags} "
-            f"mom={self.feature_config['momentum']} "
-            f"sma={self.feature_config['sma']} "
-            f"vol={self.feature_config['volatility']} "
-            f"min={self.feature_config['min']} "
-            f"max={self.feature_config['max']}"
+            f"mom={self.window} "
+            f"sma={self.window} "
+            f"vol={self.window} "
+            f"min={self.window} "
+            f"max={self.window}"
         )
 
 
