@@ -40,7 +40,7 @@ class MRVectorBacktester(MomVectorBacktester):
     def run_strategy(self, SMA, threshold):
         ''' Backtests the trading strategy.
         '''
-        # 最初の行はreturnはなしでPrice/SMAのみ存在する行となるが、Signalとして使用可能と判断し、dropna()しないように変更。
+        # 最初の行はreturnはなしでPriceのみ存在する行となるが、Signalとして使用可能と判断し、dropna()しないように変更。
         data = self.data.copy()
         # data = self.data.copy().dropna()
         data['sma'] = data['price'].rolling(SMA).mean()

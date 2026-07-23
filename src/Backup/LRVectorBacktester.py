@@ -72,7 +72,7 @@ class LRVectorBacktester:
             instrument=self.symbol,     # 例: 'EUR_USD'
             # 日付及び時刻はUTCのベースの日付／時刻を指定する必要がある。
             # 特に日足はNYのclose(UTC21:00/21:00)のタイミングでは区切られてはいるが、開始時刻の日付が付けられているために、通常感覚の日付の１日前の日付となっていることに注意。
-            # 時間足に日付を指定した場合にはUTC00:00の時刻指定とみなされる。
+            # 時間足に日付を指定した場合にはUTC00:00の時刻指定とみなされるが、end日に対しては(日足と同様にその日全体を含むようにするために)UTC23:59まで延長するようにしている。
             start=self.start, # '2009-12-31', '2009-12-31T21:00:00Z'
             end=self.end,     # '2010-12-30', "2010-12-31T20:59:59Z"
             granularity=self.granularity, # 'D', 'H1', 'M15', 'S5' など
@@ -92,9 +92,9 @@ class LRVectorBacktester:
         raw = pd.DataFrame(df['close'])
         raw.rename(columns={'close': 'price'}, inplace=True)
 
-        # # --- ⑥ 期間でフィルタリング（時間足対応版） ---
-        # end_dt = pd.to_datetime(self.end) + pd.Timedelta(hours=23, minutes=59, seconds=59)
-        # raw = raw.loc[self.start:end_dt]
+        # --- ⑥ 期間でフィルタリング（時間足対応版） ---
+        end_dt = pd.to_datetime(self.end) + pd.Timedelta(hours=23, minutes=59, seconds=59)
+        raw = raw.loc[self.start:end_dt]
         # # --- ⑥ 期間でフィルタリング --- (end日を含むように変更←不要だったみたい)---
         # end_dt = pd.to_datetime(self.end) + pd.Timedelta(days=1)
         # raw = raw.loc[self.start:end_dt]
@@ -110,36 +110,36 @@ class LRVectorBacktester:
         raw['returns'] = np.log(raw / raw.shift(1))
         self.data = raw.dropna()
 
-    # def select_data(self, start, end):
-    #     ''' Selects sub-sets of the financial data.
-    #     '''
-    #     data = self.data[(self.data.index >= start) &
-    #                      (self.data.index <= end)].copy()
-    #     return data
+    def select_data(self, start, end):
+        ''' Selects sub-sets of the financial data.
+        '''
+        data = self.data[(self.data.index >= start) &
+                         (self.data.index <= end)].copy()
+        return data
     
-    # def prepare_lags(self, start, end):
-    #     ''' Prepares the lagged data for the regression and prediction steps.
-    #     '''
-    #     data = self.select_data(start,end)
-    #     self.cols = []
-    #     for lag in range(1, self.lags + 1):
-    #         col = f'lag_{lag}'
-    #         data[col] = data['returns'].shift(lag)
-    #         self.cols.append(col)
-    #     data.dropna(inplace=True)
-    #     self.lagged_data = data
+    def prepare_lags(self, start, end):
+        ''' Prepares the lagged data for the regression and prediction steps.
+        '''
+        data = self.select_data(start,end)
+        self.cols = []
+        for lag in range(1, self.lags + 1):
+            col = f'lag_{lag}'
+            data[col] = data['returns'].shift(lag)
+            self.cols.append(col)
+        data.dropna(inplace=True)
+        self.lagged_data = data
 
-    # def fit_model(self, start, end):
-    #     ''' Implements the regression step.
-    #     '''
-    #     self.prepare_lags(start, end)
-    #     reg = np.linalg.lstsq(self.lagged_data[self.cols],
-    #                           np.sign(self.lagged_data['returns']),
-    #                           rcond=None)[0]
-    #     self.reg = reg
+    def fit_model(self, start, end):
+        ''' Implements the regression step.
+        '''
+        self.prepare_lags(start, end)
+        reg = np.linalg.lstsq(self.lagged_data[self.cols],
+                              np.sign(self.lagged_data['returns']),
+                              rcond=None)[0]
+        self.reg = reg
 
-    # def print_reg(self):
-    #     print(self.reg)
+    def print_reg(self):
+        print(self.reg)
 
     def run_strategy(self, start_in, end_in, start_out, end_out, lags=3):
         ''' Backtests the trading strategy.
@@ -149,63 +149,23 @@ class LRVectorBacktester:
         self.start_out = start_out
         self.end_out = end_out
 
-        # self.lags = lags
-        # self.fit_model(start_in, end_in)
-        # self.results = self.select_data(start_out, end_out).iloc[lags:]
-        # self.prepare_lags(start_out, end_out)
-        # prediction = np.sign(np.dot(self.lagged_data[self.cols], self.reg))
-        # self.results['prediction'] = prediction
-        # self.results['strategy'] = self.results['prediction'].shift(1) * \
-        #                             self.results['returns']
-        # # determine when a trade takes place
-        # trades = self.results['prediction'].diff().fillna(0) != 0
-        # # subtract transaction costs from return when trade takes place
-        # # self.results['strategy'][trades] -= self.tc
-        # self.results.loc[trades, 'strategy'] -= self.tc
-        # self.results['creturns'] = self.amount * \
-        #                 self.results['returns'].cumsum().apply(np.exp)
-        # self.results['cstrategy'] = self.amount * \
-        #                 self.results['strategy'].cumsum().apply(np.exp)
-
-
-        # ① 特徴量展開（ここで lags を使う）
-        data = self.data.copy()
-        cols = []
-
-        for lag in range(1, lags + 1):
-            col = f'lag_{lag}'
-            data[col] = data['returns'].shift(lag)
-            cols.append(col)
-
-        data.dropna(inplace=True)
-
-        # ② Sample/Test の切り出し（特徴量展開の後）
-        train = data.loc[start_in:end_in].copy()
-        test  = data.loc[start_out:end_out].copy()
-
-        # ③ 学習
-        X_train = train[cols]
-        y_train = np.sign(train['returns'])
-        reg = np.linalg.lstsq(X_train, y_train, rcond=None)[0]
-
-        # ④ 予測
-        X_test = test[cols]
-        test['prediction'] = np.sign(np.dot(X_test, reg))
-
-        # ⑤ 戦略リターン（Shiftしてはいけない！）
-        test['strategy'] = test['prediction'] * test['returns']
-        # test['strategy'] = test['prediction'].shift(1) * test['returns']
-
-        # ⑥ TC
-        trades = test['prediction'].diff().fillna(0) != 0
-        test.loc[trades, 'strategy'] -= self.tc
-
-        # ⑦ 累積
-        test['creturns'] = self.amount * np.exp(test['returns'].cumsum())
-        test['cstrategy'] = self.amount * np.exp(test['strategy'].cumsum())
-
-        self.results = test
-
+        self.lags = lags
+        self.fit_model(start_in, end_in)
+        self.results = self.select_data(start_out, end_out).iloc[lags:]
+        self.prepare_lags(start_out, end_out)
+        prediction = np.sign(np.dot(self.lagged_data[self.cols], self.reg))
+        self.results['prediction'] = prediction
+        self.results['strategy'] = self.results['prediction'].shift(1) * \
+                                    self.results['returns']
+        # determine when a trade takes place
+        trades = self.results['prediction'].diff().fillna(0) != 0
+        # subtract transaction costs from return when trade takes place
+        # self.results['strategy'][trades] -= self.tc
+        self.results.loc[trades, 'strategy'] -= self.tc
+        self.results['creturns'] = self.amount * \
+                        self.results['returns'].cumsum().apply(np.exp)
+        self.results['cstrategy'] = self.amount * \
+                        self.results['strategy'].cumsum().apply(np.exp)
         # gross performance of the strategy
         aperf = self.results['cstrategy'].iloc[-1]
         # out-/underperformance of strategy

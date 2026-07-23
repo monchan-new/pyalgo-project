@@ -26,11 +26,9 @@ class NeuralNetworkVectorBacktester:
     Similar structure to ScikitVectorBacktester.
     '''
     
-    def __init__(self, symbol, 
-                 start, end, 
-                 amount, tc=0.000025,
-                 threshold_long=0.50, threshold_short=0.50,
-                 neurons=32, epochs=25, lr=0.0005, granularity='D'):
+    def __init__(self, symbol, start, end, amount, tc=0.000025,
+                  threshold_long=0.50, threshold_short=0.50,
+                  neurons=32, epochs=25, lr=0.0005, granularity='D'):
         self.symbol = symbol
         self.start = start
         self.end = end
@@ -103,15 +101,15 @@ class NeuralNetworkVectorBacktester:
         sigma = self.data['returns'].std() * 252 ** 0.5
         r = 0.0
         f = (mu - r) / sigma **2
-        print('Kelly fraction for target symbol =', f)
+        print(f)
 
-    # # -----------------------------
-    # # 2. データ選択
-    # # -----------------------------
-    # def select_data(self, start, end):
-    #     data = self.data[(self.data.index >= start) &
-    #                      (self.data.index <= end)].copy()
-    #     return data
+    # -----------------------------
+    # 2. データ選択
+    # -----------------------------
+    def select_data(self, start, end):
+        data = self.data[(self.data.index >= start) &
+                         (self.data.index <= end)].copy()
+        return data
     
     # -----------------------------
     # 3. 特徴量生成
@@ -123,10 +121,7 @@ class NeuralNetworkVectorBacktester:
 
         # momentum
         for k in self.feature_config.get("momentum", []):
-            data[f"mom_{k}"] = np.sign(data["returns"].rolling(k).mean())
-
-        # for k in self.feature_config.get("momentum", []):
-        #     data[f"mom_{k}"] = data["price"] - data["price"].shift(k)
+            data[f"mom_{k}"] = data["price"] - data["price"].shift(k)
 
         # volatility
         for k in self.feature_config.get("volatility", []):
@@ -146,20 +141,20 @@ class NeuralNetworkVectorBacktester:
                 data["price"].rolling(k).max() - data["price"].rolling(k).min()
             )
 
-    # def prepare_features(self, start, end):
-    #     data = self.select_data(start,end)
+    def prepare_features(self, start, end):
+        data = self.select_data(start,end)
 
-    #     # ★ 追加特徴量生成
-    #     self.add_features(data)
-    #     data.dropna(inplace=True)
+        # ★ 追加特徴量生成
+        self.add_features(data)
+        data.dropna(inplace=True)
 
-    #     # ★ テスト期間のデータについてのみここで標準化するが、平均・標準偏差は学習期間で求めたもの、つまりmu,std は fit_model() で計算したものを使う
-    #     if hasattr(self, "mu"):
-    #         data[self.feature_columns] = (data[self.feature_columns] - self.mu) / self.std
+        # ★ テスト期間のデータについてのみここで標準化するが、平均・標準偏差は学習期間で求めたもの、つまりmu,std は fit_model() で計算したものを使う
+        if hasattr(self, "mu"):
+            data[self.feature_columns] = (data[self.feature_columns] - self.mu) / self.std
 
-    #     self.data_subset = data
+        self.data_subset = data
 
-    #     # print("prepare_features: rows =", len(data))
+        # print("prepare_features: rows =", len(data))
 
 
     # -----------------------------
@@ -178,76 +173,72 @@ class NeuralNetworkVectorBacktester:
         )
         return model
 
-    # # -----------------------------
-    # # 5. モデル学習
-    # # -----------------------------
-    # def fit_model(self, start, end):
-    #     # ★ JupyterLabの実行を想定して、前回の試行の値をリセット
-    #     self.feature_columns = []
-    #     if hasattr(self, "mu"): del self.mu
-    #     if hasattr(self, "std"): del self.std
-    #     self.model = None
-    #     self.data_subset = None
+    # -----------------------------
+    # 5. モデル学習
+    # -----------------------------
+    def fit_model(self, start, end):
+        # ★ JupyterLabの実行を想定して、前回の試行の値をリセット
+        self.feature_columns = []
+        if hasattr(self, "mu"): del self.mu
+        if hasattr(self, "std"): del self.std
+        self.model = None
+        self.data_subset = None
 
-    #     # まず特徴量を生成する
-    #     self.prepare_features(start, end)
+        # まず特徴量を生成する
+        self.prepare_features(start, end)
 
-    #     # ★ prepare_features の後で feature_columns を決める
-    #     self.feature_columns = [
-    #         col for col in self.data_subset.columns
-    #         if col not in ["price", "returns"]
-    #     ]
+        # ★ prepare_features の後で feature_columns を決める
+        self.feature_columns = [
+            col for col in self.data_subset.columns
+            if col not in ["price", "returns"]
+        ]
 
-    #     # ★ 学習期間で mu,std を計算（テキストと同じタイミング）
-    #     self.mu = self.data_subset[self.feature_columns].mean()
-    #     self.std = self.data_subset[self.feature_columns].std()
+        # ★ 学習期間で mu,std を計算（テキストと同じタイミング）
+        self.mu = self.data_subset[self.feature_columns].mean()
+        self.std = self.data_subset[self.feature_columns].std()
 
-    #     # ★ 学習データを標準化（テキストと同じタイミング）
-    #     X = (self.data_subset[self.feature_columns] - self.mu) / self.std
+        # ★ 学習データを標準化（テキストと同じタイミング）
+        X = (self.data_subset[self.feature_columns] - self.mu) / self.std
 
 
-    #     # ★ １つ前のFeature を入力として、
-    #     X = X.shift(1)
-    #     # ★ 本日のリターン（をコード化したもの：1/0）をターゲットにする
-    #     y = np.where(self.data_subset['returns'] > 0, 1, 0)
+        # ★ １つ前のFeature を入力として、
+        X = X.shift(1)
+        # ★ 本日のリターン（をコード化したもの：1/0）をターゲットにする
+        y = np.where(self.data_subset['returns'] > 0, 1, 0)
 
-    #     # shift による NaN を除外
-    #     valid = X.notna().all(axis=1)
-    #     X = X[valid]
-    #     y = y[valid]
+        # shift による NaN を除外
+        valid = X.notna().all(axis=1)
+        X = X[valid]
+        y = y[valid]
         
 
-    #     # print("fit_model: valid rows =", valid.sum())
+        # print("fit_model: valid rows =", valid.sum())
 
 
-    #     # 乱数シードをここで固定化し、計算結果がばらつかないようにする。
-    #     random.seed(42)        
-    #     np.random.seed(42)
-    #     tf.random.set_seed(42)
+        # 乱数シードをここで固定化し、計算結果がばらつかないようにする。
+        random.seed(42)        
+        np.random.seed(42)
+        tf.random.set_seed(42)
 
-    #     self.model = self.build_model(len(self.feature_columns))
-    #     # テキスト同様にsplitとshuffleを追加した。
-    #     self.model.fit(X, y, epochs=self.epochs, verbose=False, 
-    # validation_split=0.2, shuffle=False)
-    #     # self.model.fit(X, y, epochs=self.epochs, verbose=False)
+        self.model = self.build_model(len(self.feature_columns))
+        # テキスト同様にsplitとshuffleを追加した。
+        self.model.fit(X, y, epochs=self.epochs, verbose=False, 
+    validation_split=0.2, shuffle=False)
+        # self.model.fit(X, y, epochs=self.epochs, verbose=False)
 
 
     # -----------------------------
     # 6. バックテスト実行
     # -----------------------------
-    def run_strategy(self, 
-                start_in, end_in, start_out, end_out, 
-                lags=3,
-                momentum=None,
-                sma=None,
-                ema=None,
-                volatility=None,
-                range_=None):
-        
-        self.start_in = start_in
-        self.end_in = end_in
-        self.start_out = start_out
-        self.end_out = end_out
+    def run_strategy(self,
+                 start_in, end_in,
+                 start_out, end_out,
+                 lags=3,
+                 momentum=None,
+                 sma=None,
+                 ema=None,
+                 volatility=None,
+                 range_=None):
 
         # デフォルト Feature Range
         # 一つのFeatureについて複数の期間をリスト形式で指定できる。（例えば[10, 20]->sma10/sma20）しかし、実際には特徴量が多くなりすぎるため、Defaultとしては単一の値を設定している。
@@ -276,107 +267,47 @@ class NeuralNetworkVectorBacktester:
         }
 
         self.lags = lags
-        # self.feature_config = feature_config
-
-        # self.fit_model(start_in, end_in)
-
-        # # テストデータ準備
-        # self.prepare_features(start_out, end_out)
-
-        # # ★ １つ前のFeature を使用する
-        # X = self.data_subset[self.feature_columns].shift(1)
-
-        # # shift による NaN を除外
-        # valid = X.notna().all(axis=1)
-        # X = X[valid]
-        # self.data_subset = self.data_subset[valid]
-
-
-        # # print("run_strategy: valid rows =", valid.sum())
-
-
-        # # NN の確率出力
-        # pred_prob = self.model.predict(X).flatten()
-        
-        # # threshold による売買シグナル
-        # self.data_subset['prediction'] = np.where(
-        #     pred_prob > self.threshold_long, 1,
-        #     np.where(pred_prob < self.threshold_short, -1, 0)
-        # )
-
-        # # 戦略リターン
-        # # ★ PredictionはReturnの行にセットしてあるためShift(1)は不要。
-        # self.data_subset['strategy'] = self.data_subset['prediction'] * self.data_subset['returns']
-
-        # # トレードコスト
-        # trades = self.data_subset['prediction'].diff().fillna(0) != 0
-        # self.data_subset.loc[trades, 'strategy'] -= self.tc
-        
-        # # 累積リターン
-        # self.data_subset['creturns'] = self.amount * np.exp(self.data_subset['returns'].cumsum())
-        # self.data_subset['cstrategy'] = self.amount * np.exp(self.data_subset['strategy'].cumsum())
-
-        
-        # self.results = self.data_subset
-        # 2. 全期間で特徴量生成
-        data = self.data.copy()
         self.feature_config = feature_config
-        self.add_features(data)
-        data.dropna(inplace=True)
+        self.fit_model(start_in, end_in)
 
-        # 3. Feature カラム決定
-        feature_columns = [
-            col for col in data.columns
-            if col not in ["price", "returns"]
-        ]
-        self.feature_columns = feature_columns
+        # テストデータ準備
+        self.prepare_features(start_out, end_out)
 
-        # 4. Sample/Test に分割
-        train = data.loc[start_in:end_in].copy()
-        test  = data.loc[start_out:end_out].copy()
+        # ★ １つ前のFeature を使用する
+        X = self.data_subset[self.feature_columns].shift(1)
 
-        # 5. 標準化（学習期間で mu/std を計算し、両方に適用）
-        mu  = train[feature_columns].mean()
-        std = train[feature_columns].std()
-        # self.mu  = mu
-        # self.std = std
+        # shift による NaN を除外
+        valid = X.notna().all(axis=1)
+        X = X[valid]
+        self.data_subset = self.data_subset[valid]
 
-        X_train = (train[feature_columns] - mu) / std
-        y_train = np.where(train['returns'] > 0, 1, 0)
 
-        # 6. NN 学習（shift なし）
-        random.seed(42)
-        np.random.seed(42)
-        tf.random.set_seed(42)
+        # print("run_strategy: valid rows =", valid.sum())
 
-        self.model = self.build_model(len(feature_columns))
-        self.model.fit(X_train, y_train,
-                    epochs=self.epochs,
-                    verbose=False,
-                    validation_split=0.2,
-                    shuffle=False)
 
-        # 7. テストデータ標準化＆予測（shift なし）
-        X_test = (test[feature_columns] - mu) / std
-        pred_prob = self.model.predict(X_test).flatten()
-
-        test['prediction'] = np.where(
+        # NN の確率出力
+        pred_prob = self.model.predict(X).flatten()
+        
+        # threshold による売買シグナル
+        self.data_subset['prediction'] = np.where(
             pred_prob > self.threshold_long, 1,
             np.where(pred_prob < self.threshold_short, -1, 0)
         )
 
-        # 8. 戦略リターン（当日同士）
-        test['strategy'] = test['prediction'] * test['returns']
+        # 戦略リターン
+        # ★ PredictionはReturnの行にセットしてあるためShift(1)は不要。
+        self.data_subset['strategy'] = self.data_subset['prediction'] * self.data_subset['returns']
 
-        trades = test['prediction'].diff().fillna(0) != 0
-        test.loc[trades, 'strategy'] -= self.tc
+        # トレードコスト
+        trades = self.data_subset['prediction'].diff().fillna(0) != 0
+        self.data_subset.loc[trades, 'strategy'] -= self.tc
+        
+        # 累積リターン
+        self.data_subset['creturns'] = self.amount * np.exp(self.data_subset['returns'].cumsum())
+        self.data_subset['cstrategy'] = self.amount * np.exp(self.data_subset['strategy'].cumsum())
 
-        test['creturns']  = self.amount * np.exp(test['returns'].cumsum())
-        test['cstrategy'] = self.amount * np.exp(test['strategy'].cumsum())
-
-        self.results = test
-
-
+        
+        self.results = self.data_subset
         # absolute performance of the strategy
         aperf = self.results['cstrategy'].iloc[-1]
         # out-/underperformance of strategy
@@ -427,7 +358,9 @@ class NeuralNetworkVectorBacktester:
                         sma_range=None,
                         ema_range=None,
                         volatility_range=None,
-                        range_range=None,):
+                        range_range=None,
+                        start_in=None, end_in=None,
+                        start_out=None, end_out=None):
         ''' usage:
         1. optimize_parameters(start_in, end_in, start_out, end_out) 
             →rangeはすべてDefaultを使用。
@@ -435,11 +368,11 @@ class NeuralNetworkVectorBacktester:
             →一部のrangeだけ指定して後はDefaultを使用。
         '''
 
-        # # 固定の日付をセット
-        # self.start_in  = start_in
-        # self.end_in    = end_in
-        # self.start_out = start_out
-        # self.end_out   = end_out
+        # 固定の日付をセット
+        self.start_in  = start_in
+        self.end_in    = end_in
+        self.start_out = start_out
+        self.end_out   = end_out
 
         # デフォルト Range
         default_ranges = {

@@ -106,10 +106,10 @@ class ScikitVectorBacktester:
         raw = pd.DataFrame(df['close'])
         raw.rename(columns={'close': 'price'}, inplace=True)
 
-        # # --- ⑥ 期間でフィルタリング ---
-        #     # 時間足対応は混乱するためやめた。
-        #     # end_dt = pd.to_datetime(self.end) + pd.Timedelta(hours=23, minutes=59, seconds=59)
-        # raw = raw.loc[self.start:self.end]
+        # --- ⑥ 期間でフィルタリング ---
+            # 時間足対応は混乱するためやめた。
+            # end_dt = pd.to_datetime(self.end) + pd.Timedelta(hours=23, minutes=59, seconds=59)
+        raw = raw.loc[self.start:self.end]
 
         # raw = pd.read_csv(
         #     'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
@@ -122,134 +122,81 @@ class ScikitVectorBacktester:
         raw['returns'] = np.log(raw / raw.shift(1))
         self.data = raw.dropna()
 
-    # def select_data(self, start, end):
-    #     ''' Selects sub-sets of the financial data.
-    #     '''
-    #     data = self.data[(self.data.index >= start) &
-    #                      (self.data.index <= end)].copy()
-    #     return data
+    def select_data(self, start, end):
+        ''' Selects sub-sets of the financial data.
+        '''
+        data = self.data[(self.data.index >= start) &
+                         (self.data.index <= end)].copy()
+        return data
     
-    # def prepare_features(self, start, end):
-    #     ''' Prepares the feature columns for the regression and prediction steps.
-    #     '''
-    #     self.data_subset = self.select_data(start,end)
-    #     self.feature_columns = []
-    #     for lag in range(1, self.lags + 1):
-    #         col = f'lag_{lag}'
-    #         self.data_subset[col] = self.data_subset['returns'].shift(lag)
-    #         self.feature_columns.append(col)
-    #     self.data_subset.dropna(inplace=True)
+    def prepare_features(self, start, end):
+        ''' Prepares the feature columns for the regression and prediction steps.
+        '''
+        self.data_subset = self.select_data(start,end)
+        self.feature_columns = []
+        for lag in range(1, self.lags + 1):
+            col = f'lag_{lag}'
+            self.data_subset[col] = self.data_subset['returns'].shift(lag)
+            self.feature_columns.append(col)
+        self.data_subset.dropna(inplace=True)
 
-    # def fit_model(self, start, end):
-    #     ''' Implements the fitting step.
-    #     '''
-    #     # --- JupyterLab対策としての初期化 ---
-    #     self.feature_columns = []
-    #     self.data_subset = None
+    def fit_model(self, start, end):
+        ''' Implements the fitting step.
+        '''
+        # --- JupyterLab対策としての初期化 ---
+        self.feature_columns = []
+        self.data_subset = None
 
-    #     self.prepare_features(start, end)
+        self.prepare_features(start, end)
 
-    #     # ★ 前日の特徴量を使う（未来リーク防止）
-    #     X = self.data_subset[self.feature_columns].shift(1)
-    #     y = np.sign(self.data_subset['returns'])
+        # ★ 前日の特徴量を使う（未来リーク防止）
+        X = self.data_subset[self.feature_columns].shift(1)
+        y = np.sign(self.data_subset['returns'])
 
-    #     # NaN を除外
-    #     valid = X.notna().all(axis=1)
-    #     X = X[valid]
-    #     y = y[valid]
+        # NaN を除外
+        valid = X.notna().all(axis=1)
+        X = X[valid]
+        y = y[valid]
 
-    #     # 学習
-    #     self.model.fit(X, y)
-    #     # self.model.fit(self.data_subset[self.feature_columns],
-    #     #                       np.sign(self.data_subset['returns']))
+        # 学習
+        self.model.fit(X, y)
+        # self.model.fit(self.data_subset[self.feature_columns],
+        #                       np.sign(self.data_subset['returns']))
 
     def run_strategy(self, start_in, end_in, start_out, end_out, lags=3):
         ''' Backtests the trading strategy.
         '''
-        self.start_in = start_in
-        self.end_in = end_in
-        self.start_out = start_out
-        self.end_out = end_out
         self.lags = lags
+        self.fit_model(start_in, end_in)
 
-        # self.fit_model(start_in, end_in)
+        self.prepare_features(start_out, end_out)
 
-        # self.prepare_features(start_out, end_out)
+        # ★ 前日の特徴量で予測
+        X = self.data_subset[self.feature_columns].shift(1)
 
-        # # ★ 前日の特徴量で予測
-        # X = self.data_subset[self.feature_columns].shift(1)
+        valid = X.notna().all(axis=1)
+        X = X[valid]
+        self.data_subset = self.data_subset[valid]
 
-        # valid = X.notna().all(axis=1)
-        # X = X[valid]
-        # self.data_subset = self.data_subset[valid]
+        prediction = self.model.predict(X)
+        # prediction = self.model.predict(
+        #     self.data_subset[self.feature_columns])
+        self.data_subset['prediction'] = prediction
+        # ★ 当日のPredictionは当日のレコードに書き込まれているを使用する（shift 不要）
+        self.data_subset['strategy'] = (self.data_subset['prediction'] * 
+                                        self.data_subset['returns'])
+        # determine when a trade takes place
+        trades = self.data_subset['prediction'].diff().fillna(0) != 0
+        # subtract transaction costs from return when trade takes place
+        # self.data_subset['strategy'][trades] -= self.tc
+        self.data_subset.loc[trades, 'strategy'] -= self.tc
+        self.data_subset['creturns'] = (self.amount * 
+                        self.data_subset['returns'].cumsum().apply(np.exp))
+        self.data_subset['cstrategy'] = (self.amount * \
+                        self.data_subset['strategy'].cumsum().apply(np.exp))
+        self.results = self.data_subset
 
-        # prediction = self.model.predict(X)
-        # # prediction = self.model.predict(
-        # #     self.data_subset[self.feature_columns])
-        # self.data_subset['prediction'] = prediction
-        # # ★ 当日のPredictionは当日のレコードに書き込まれているを使用する（shift 不要）
-        # self.data_subset['strategy'] = (self.data_subset['prediction'] * 
-        #                                 self.data_subset['returns'])
-        # # determine when a trade takes place
-        # trades = self.data_subset['prediction'].diff().fillna(0) != 0
-        # # subtract transaction costs from return when trade takes place
-        # # self.data_subset['strategy'][trades] -= self.tc
-        # self.data_subset.loc[trades, 'strategy'] -= self.tc
-        # self.data_subset['creturns'] = (self.amount * 
-        #                 self.data_subset['returns'].cumsum().apply(np.exp))
-        # self.data_subset['cstrategy'] = (self.amount * \
-        #                 self.data_subset['strategy'].cumsum().apply(np.exp))
-        # self.results = self.data_subset
-
-        # # print(self.results)
-
-        # ① 特徴量展開（ここで lags を使う）
-        data = self.data.copy()
-        cols = []
-
-        for lag in range(1, lags + 1):
-            col = f'lag_{lag}'
-            data[col] = data['returns'].shift(lag)
-            cols.append(col)
-
-        data.dropna(inplace=True)
-
-        # ② Sample/Test の切り出し（特徴量展開の後）
-        train = data.loc[start_in:end_in].copy()
-        test  = data.loc[start_out:end_out].copy()
-
-        # ③ 学習（Shiftを使わない！）
-        X_train = train[cols]
-        # X_train = train[cols].shift(1)
-        y_train = np.sign(train['returns'])
-
-        # valid = X_train.notna().all(axis=1)
-        # X_train = X_train[valid]
-        # y_train = y_train[valid]
-
-        self.model.fit(X_train, y_train)
-
-        # ④ 予測（Shiftしない！）
-        X_test = test[cols]
-        # X_test = test[cols].shift(1)
-        # valid = X_test.notna().all(axis=1)
-        # X_test = X_test[valid]
-        # test = test[valid]
-
-        test['prediction'] = self.model.predict(X_test)
-
-        # ⑤ 戦略リターン（shift 不要）
-        test['strategy'] = test['prediction'] * test['returns']
-
-        # ⑥ TC
-        trades = test['prediction'].diff().fillna(0) != 0
-        test.loc[trades, 'strategy'] -= self.tc
-
-        # ⑦ 累積
-        test['creturns'] = self.amount * np.exp(test['returns'].cumsum())
-        test['cstrategy'] = self.amount * np.exp(test['strategy'].cumsum())
-
-        self.results = test
+        # print(self.results)
 
         # absolute performance of the strategy
         aperf = self.results['cstrategy'].iloc[-1]
@@ -264,7 +211,8 @@ class ScikitVectorBacktester:
         if self.results is None:
             print('No results to plot yet. Run a strategy.')
         title = f'{self.symbol} | Lags =  {self.lags}'
-        self.results[['creturns', 'cstrategy']].plot(title=title, figsize=(10,6)) 
+        self.results[['creturns', 'cstrategy']].plot(title=title,
+                                                     figsize=(10,6)) 
 
     # 日付は固定でLagsだけOptimizeしたバージョン
     def update_and_run(self, params):
@@ -284,17 +232,20 @@ class ScikitVectorBacktester:
         return -self.run_strategy(start_in, end_in, start_out, end_out, lags)[0]
 
 
-    def optimize_parameters(self, lags_range):
+    def optimize_parameters(self, lags_range,
+                            start_in, end_in, start_out, end_out):
         """
         使い方のイメージ：
-        scibt.optimize_parameters((3, 50, 1))
+        scibt.optimize_parameters((3, 50, 1),
+                                '2002-5-6', '2005-12-31',
+                                '2006-1-1', '2009-12-31')
         """
 
-        # # 固定の日付をセット
-        # self.start_in  = start_in
-        # self.end_in    = end_in
-        # self.start_out = start_out
-        # self.end_out   = end_out
+        # 固定の日付をセット
+        self.start_in  = start_in
+        self.end_in    = end_in
+        self.start_out = start_out
+        self.end_out   = end_out
 
         # lags だけを brute で探索
         opt = brute(self.update_and_run,

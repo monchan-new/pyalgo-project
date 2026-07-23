@@ -189,10 +189,16 @@ class AdaBoostVectorBacktester:
         test['strategy'] = (
             test['prediction'] * test['returns']
         )
-
+        
+        print('rerurns, strategy=', test[['returns', 'strategy']].sum().apply(np.exp))
+        
         # コスト
         trades = test['prediction'].diff().fillna(0) != 0
         test.loc[trades, 'strategy'] -= self.tc
+
+
+        print('strategy_tc=', test[['strategy']].sum().apply(np.exp))
+        
 
         # 累積リターン
         test['creturns'] = (
@@ -202,14 +208,13 @@ class AdaBoostVectorBacktester:
             self.amount * np.exp(test['strategy'].cumsum())
         )
 
+
         # ⑧ 結果を保存
         self.data_subset = test
         self.results = test
 
         aperf = self.results['cstrategy'].iloc[-1]
         operf = aperf - self.results['creturns'].iloc[-1]
-
-        print(aperf)
 
         return round(aperf, 2), round(operf, 2)
 

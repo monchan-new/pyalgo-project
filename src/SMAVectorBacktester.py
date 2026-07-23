@@ -46,10 +46,10 @@ class SMAVectorBacktester:
         raw.rename(columns={'close': 'price'}, inplace=True)
 
 
-        # --- ⑥ 期間でフィルタリング (end日を含むように変更をやめた)---
-        # end_dt = pd.to_datetime(self.end) + pd.Timedelta(days=1)
-        end_dt = pd.to_datetime(self.end)
-        raw = raw.loc[self.start:end_dt]
+        # # --- ⑥ 期間でフィルタリング (end日を含む変更をやめた)---
+        # # end_dt = pd.to_datetime(self.end) + pd.Timedelta(days=1)
+        # end_dt = pd.to_datetime(self.end)
+        # raw = raw.loc[self.start:end_dt]
 
         # raw = pd.read_csv(
         #     'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
@@ -76,9 +76,7 @@ class SMAVectorBacktester:
             self.data['SMA2'] = self.data['price'].rolling(self.SMA2).mean()
 
     def run_strategy(self):
-        # 最初の行はreturnはなしでPrice/SMAのみ存在する行となるが、Signalとして使用可能と判断し、dropna()しないように変更。
-        data = self.data.copy()
-        # data = self.data.copy().dropna()
+        data = self.data.copy().dropna()
         # print('before position',data)
 
         data['position'] = np.where(data['SMA1'] > data['SMA2'], 1, -1)

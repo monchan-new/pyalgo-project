@@ -83,9 +83,9 @@ class MomVectorBacktester:
         raw = pd.DataFrame(df['close'])
         raw.rename(columns={'close': 'price'}, inplace=True)
 
-        # --- ⑥ 期間でフィルタリング --- (end日を含むように変更)---
-        end_dt = pd.to_datetime(self.end) + pd.Timedelta(days=1)
-        raw = raw.loc[self.start:end_dt]
+        # # --- ⑥ 期間でフィルタリング --- (end日を含むように変更)---
+        # end_dt = pd.to_datetime(self.end) + pd.Timedelta(days=1)
+        # raw = raw.loc[self.start:end_dt]
 
         # raw = pd.read_csv(
         #     'https://hilpisch.com/pyalgo_eikon_eod_data.csv',
