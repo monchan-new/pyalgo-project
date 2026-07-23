@@ -5,6 +5,8 @@ import tpqoa
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import AdaBoostClassifier
 
+from scipy.optimize import brute
+
 
 class AdaBoostVectorBacktester:
     """
@@ -77,26 +79,32 @@ class AdaBoostVectorBacktester:
         # print(raw)
 
 
-    # -----------------------------
-    # 2. データ選択
-    # -----------------------------
-    def select_data(self, start, end):
-        return self.data[(self.data.index >= start) &
-                         (self.data.index <= end)].copy()
+    # # -----------------------------
+    # # 2. データ選択
+    # # -----------------------------
+    # def select_data(self, start, end):
+    #     return self.data[(self.data.index >= start) &
+    #                      (self.data.index <= end)].copy()
 
 
     # -----------------------------
     # 4. 特徴量準備
     # -----------------------------
-    def prepare_features_all(self, window, lags):
+    def prepare_features_all(self, 
+                             momentum, 
+                             sma,
+                             volatility,
+                             min_window,max_window,
+                             lags):
         # df = self.data.copy()
 
         # rolling
-        self.data['vol'] = self.data['returns'].rolling(window).std()
-        self.data['mom'] = np.sign(self.data['returns'].rolling(window).mean())
-        self.data['sma'] = self.data['price'].rolling(window).mean()
-        self.data['min'] = self.data['price'].rolling(window).min()
-        self.data['max'] = self.data['price'].rolling(window).max()
+        self.data['vol'] = self.data['returns'].rolling(volatility).std()
+        self.data['mom'] = np.sign(self.data['returns'].rolling(momentum).mean())
+        self.data['sma'] = self.data['price'].rolling(sma).mean()
+        self.data['min'] = self.data['price'].rolling(min_window).min()
+        self.data['max'] = self.data['price'].rolling(max_window).max()
+
 
         # print(self.data)
 
@@ -117,24 +125,48 @@ class AdaBoostVectorBacktester:
     # 6. バックテスト実行
     # -----------------------------
     def run_strategy(self,
-                 start_in, end_in,
-                 start_out, end_out,
-                 lags=6,
-                 window=20):
+                start_in, end_in,
+                start_out, end_out,
+                lags=6,
+                momentum=5,
+                sma=20,
+                volatility=20,
+                min_window=14,
+                max_window=14):
+
         
+        # print(self.data)
+        
+        # Optimizer用に保存
+        self.start_in  = start_in
+        self.end_in    = end_in
+        self.start_out = start_out
+        self.end_out   = end_out
+
+        # ★ Plot用に保存
+        self.lags = lags
+        self.momentum = momentum
+        self.sma = sma
+        self.volatility = volatility
+        self.min_window = min_window
+        self.max_window = max_window
+
         # ★ 内部状態だけ初期化（self.data は初期化しない）
         self.data_subset = None
         self.feature_columns = None
         self.results = None
         self.model = None
 
-        # print(self.data)
-
-        self.lags = lags
-        self.window = window
-
         # 全期間の特徴量を作る
-        df = self.prepare_features_all(window, lags)
+        df = self.prepare_features_all(
+            momentum=momentum,
+            sma=sma,
+            volatility=volatility,
+            min_window=min_window,
+            max_window=max_window,
+            lags=lags
+        )
+
         
         # lag 展開後の特徴量だけを使う列を定義
         self.feature_columns = [
@@ -190,14 +222,14 @@ class AdaBoostVectorBacktester:
             test['prediction'] * test['returns']
         )
         
-        print('rerurns, strategy=', test[['returns', 'strategy']].sum().apply(np.exp))
+        # print('rerurns, strategy=', test[['returns', 'strategy']].sum().apply(np.exp))
         
         # コスト
         trades = test['prediction'].diff().fillna(0) != 0
         test.loc[trades, 'strategy'] -= self.tc
 
 
-        print('strategy_tc=', test[['strategy']].sum().apply(np.exp))
+        # print('strategy_tc=', test[['strategy']].sum().apply(np.exp))
         
 
         # 累積リターン
@@ -216,6 +248,8 @@ class AdaBoostVectorBacktester:
         aperf = self.results['cstrategy'].iloc[-1]
         operf = aperf - self.results['creturns'].iloc[-1]
 
+        print("aperf=", aperf)
+
         return round(aperf, 2), round(operf, 2)
 
 
@@ -230,12 +264,72 @@ class AdaBoostVectorBacktester:
         title = (
             f"{self.symbol} | AdaBoost Strategy | "
             f"lags={self.lags} "
-            f"mom={self.window} "
-            f"sma={self.window} "
-            f"vol={self.window} "
-            f"min={self.window} "
-            f"max={self.window}"
+            f"momentum={self.momentum} "
+            f"sma={self.sma} "
+            f"vol={self.volatility} "
+            f"min={self.min_window} "
+            f"max={self.max_window}"
         )
 
-
         self.results[['creturns', 'cstrategy']].plot(figsize=(10, 6), title=title)
+
+
+
+
+    def update_and_run(self, params):
+        lags        = int(params[0])
+        momentum    = int(params[1])
+        sma         = int(params[2])
+        volatility  = int(params[3])
+        min_window  = int(params[4])
+        max_window  = int(params[5])
+
+        
+        print('lags=',lags,'mom=',momentum, "sma=",sma,
+               "volatility=",volatility, "min=",min_window, "max=", max_window)
+        
+        perf = self.run_strategy(
+            self.start_in, self.end_in,
+            self.start_out, self.end_out,
+            lags=lags,
+            momentum=momentum,
+            sma=sma,
+            volatility=volatility,
+            min_window=min_window,
+            max_window=max_window
+        )
+
+        return -perf[0]
+
+    def optimize_parameters(self,
+                        lags_range=None,
+                        momentum_range=None,
+                        sma_range=None,
+                        volatility_range=None,
+                        min_range=None,
+                        max_range=None):
+
+        default_ranges = {
+            "lags":        (3, 13, 3),     # 3,6,9,12
+            "momentum":    (5, 22, 8),     # 5,13,21
+            "sma":         (10, 41, 15),   # 10,25,40
+            "volatility":  (10, 31, 10),   # 10,20,30
+            "min_window":  (14, 15, 100),  # 固定値 14
+            "max_window":  (14, 15, 100),  # 固定値 14
+        }
+
+        ranges = [
+            lags_range       if lags_range       is not None else default_ranges["lags"],
+            momentum_range   if momentum_range   is not None else default_ranges["momentum"],
+            sma_range        if sma_range        is not None else default_ranges["sma"],
+            volatility_range if volatility_range is not None else default_ranges["volatility"],
+            min_range        if min_range        is not None else default_ranges["min_window"],
+            max_range        if max_range        is not None else default_ranges["max_window"],
+        ]
+
+        opt = brute(self.update_and_run, ranges, finish=None)
+
+        best_params = opt
+        best_perf = -self.update_and_run(opt)
+
+        return best_params, best_perf
