@@ -15,8 +15,8 @@ class AdaBoostVectorBacktester:
     """
 
     def __init__(self, symbol, start, end, amount,
-                tc=0.00010599557439495706,
-                #  tc=0.000025,
+                 # tc=0.00010599557439495706,
+                 tc=0.000025,
                  granularity='M10',
                  n_estimators=15,
                  max_depth=2,

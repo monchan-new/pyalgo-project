@@ -209,7 +209,9 @@ class ScikitVectorBacktester:
 
         for lag in range(1, lags + 1):
             col = f'lag_{lag}'
-            data[col] = data['returns'].shift(lag)
+            # Returnの符号を特徴量にしてLogisitcらしさを強調してみる。
+            data[col] = np.sign(data['returns'].shift(lag))
+            # data[col] = data['returns'].shift(lag)
             cols.append(col)
 
         data.dropna(inplace=True)
